@@ -1,0 +1,24 @@
+# Core scientific stack
+numpy
+pandas
+pyarrow
+scipy
+scikit-learn
+statsmodels
+
+# Deep learning — keras runs on the torch backend
+# (KERAS_BACKEND=torch is set in core/c01_imports.py BEFORE keras is imported)
+torch
+keras>=3
+
+# Imported by the notebook's base-imports cell (core/c01_imports.py)
+unidecode
+rapidfuzz
+
+# Plotting / reporting
+matplotlib
+plotly
+networkx
+tqdm
+ipython        # IPython.display used by a few report tables
+cartopy        # only needed for --experiment E34 (trajectory maps)
