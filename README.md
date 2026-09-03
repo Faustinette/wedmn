@@ -1,4 +1,8 @@
-# WEDMN — Vessel Destination Prediction
+# WEDMN —  Vessel Destination Prediction
+
+*This repository contains CODE only; no data or trained checkpoints are
+included.*
+**THE FULL INPUT DATASET AND TRAINED MODEL CHECKPOINTS IS AVAILABLE TO EXAMINERS ON REQUEST DUE TO DATASET**
 
 Clean, git-uploadable migration of `Main_forGitHub.ipynb`. Every notebook cell
 is preserved **verbatim** (each file marks its source cells), and the runner
@@ -69,6 +73,19 @@ NOT included. The code consumes only the preprocessed model-input files below.
 | E5 / E6 / E6CV / E7 / E7B | mixture vs shared-FF, expert count, gate behaviour |
 | E8 / E9 / E10 / E11 | cold start, structural break, fleet effect, regularization |
 | E15 / E18 | error structure, error slice & dice |
+
+## Data availability — important note for reviewers
+
+**This repository contains CODE only; no data or trained checkpoints are
+included.** The underlying AIS-derived dataset contains vessel identifiers
+(IMO numbers) and commercially sensitive movement information, and is
+therefore not publicly distributed. As a consequence, the experiments cannot
+be executed from a fresh clone of this repository alone: the input-file check
+(`core/c02_input_checks.py`) will halt immediately with an explicit
+"MISSING input" message. 
+
+**THE FULL INPUT DATASET AND TRAINED MODEL CHECKPOINTS IS AVAILABLE TO EXAMINERS ON REQUEST**
+
 
 ## Input files to place in `$WORK_DIR` (not in git — `.gitignore` excludes them)
 
