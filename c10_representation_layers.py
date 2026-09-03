@@ -1,27 +1,19 @@
-# =============================================================================
 # Section 3.b.ii — Representation layers
-# Migrated verbatim from Main_forGitHub.ipynb cells [29].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
+# -------------------
 # [notebook cell 29]
-# ----------------------------------------------------------------------
+# -------------------
 import os
 os.environ.setdefault("KERAS_BACKEND", "torch")  # must precede any keras import this session
 # Create Data transformation class
-# =============================================================================
+# ================================
 # CELL 3-INLINE -- Step3Data, FULLY SELF-CONTAINED (no project-file imports)
 # Replaces:
 #     import Step3b_representation_layer
 #     data = Step3b_representation_layer.Step3Data(WORK_DIR)
-# The class below is your Drive Step3b_representation_layer.py's own Step3Data,
-# verbatim (lines 664-1254 of that file), so `data` is byte-for-byte the same
-# object every downstream cell expects. Only standard-library / scientific
-# imports are used. NOTE: the build_*_index METHODS still lazy-import Step4
-# modules INSIDE their bodies -- untouched here because this cell only
-# constructs the object; those methods are the NEXT inlining step.
-# =============================================================================
+# The class represents the Step3b_representation_layer.py's in the original notebook 
+# ===============================
 import os, json, warnings
 from pathlib import Path
 import numpy as np
