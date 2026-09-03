@@ -1,15 +1,13 @@
-# =============================================================================
 # E3-PREREQ — per-seed epochs + E3-CONFIG v2 (TEST-side) + baseline model reload. Needed by E3/E4/E5/E8/H8.
 # Migrated verbatim from Main_forGitHub.ipynb cells [126, 127, 128].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
+
+
 # [notebook cell 126]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E3 LIB CELL -- results helpers (2 defs, verbatim from live Step4c)
-# =============================================================================
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -94,9 +92,9 @@ def plot_regime_comparison_with_variance(series_groups, target_col, work_dir, sa
     plt.show()
     return save_path
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 127]
-# ----------------------------------------------------------------------
+
 # ===== E3-CONFIG v2 -- latest model, TEST-side evaluation =====
 abl_arch = dict(alt_progression_modes=ALT_PROGRESSION_MODES, gate_ship_history=True,
                 use_ship_history=True, use_departure_gate=USE_DEPARTURE_GATE, stratify=True,
