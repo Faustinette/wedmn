@@ -1,16 +1,11 @@
-# =============================================================================
 # Section 5.1 — Training library (key functions x24)
-# Migrated verbatim from Main_forGitHub.ipynb cells [55].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
-# [notebook cell 55]
-# ----------------------------------------------------------------------
+
 import os
 os.environ.setdefault("KERAS_BACKEND", "torch")  # must precede any keras import this session
-# =============================================================================
-# LIB CELL L5-MIN -- Step4c_train, MINIMAL SUBSET (24 definitions, verbatim)
+
+# Step4c_train, MINIMAL SUBSET (24 definitions, verbatim)
 # Only what the main-model training + evaluation path needs and the notebook
 # does not already define. Computed as the code-only transitive closure of:
 #     train_residual_progression_variant, evaluate_full_report_metrics
@@ -19,7 +14,7 @@ os.environ.setdefault("KERAS_BACKEND", "torch")  # must precede any keras import
 # hist-avg via L4e's duration indices, alternative-progression compute) |
 # evaluation internals (predictions collect, full metrics incl. per-band,
 # macro-AUC) | the trainer itself. Every def is verbatim from the live file.
-# =============================================================================
+
 import os, json, math, time, pickle
 import numpy as np
 import pandas as pd
@@ -34,7 +29,6 @@ Step3b_representation_layer = _types.SimpleNamespace(DATA_SUBFOLDER="")
 
 def _progression_labels(boundaries):
     return [f"<={int(round(b*100))}%" for b in boundaries]
-
 
 def save_trained_weights(path, repr_layer, model):
     """Saves raw parameter tensors only (not architecture). Pair with
@@ -64,7 +58,7 @@ def load_trained_weights(path, repr_layer, model):
 
 
 def load_trained_model(weights_path, n_ports, n_size_classes, n_classes,
-                        d_model=128, gru_layers=1, n_casp_layers=2,
+                        d_model=32, gru_layers=1, n_casp_layers=2,
                         n_heads_mca=2, n_heads_msa=4, d_ff=None,
                         use_spatial_channel=True, use_local_pattern_channel=True,
                         use_departure_port_channel=True, use_ship_size_channel=True,
@@ -80,26 +74,32 @@ def load_trained_model(weights_path, n_ports, n_size_classes, n_classes,
                         use_moe_ffn=False, n_experts=2, gate_uses_content=False, content_code_dim=8,
                         moe_last_layer_only=False, n_alt_progression_signals=0, use_departure_gate=False,
                         n_departure_subregions=None, departure_embed_dim=8):
-    """Rebuilds a fresh RepresentationLayer + WAYModel with the given
-    architecture, forces weight-building with a dummy forward pass, then
-    loads trained weights from a checkpoint saved by save_trained_weights()
-    (or the notebook's save_checkpoint()). ALL architecture arguments must
-    match what was used at training time, INCLUDING use_spatial_channel,
-    use_local_pattern_channel, use_departure_port_channel,
-    use_ship_size_channel, use_temporal_encoding, use_declared_destination,
-    use_ship_history, use_fleet_context, use_recency_bias,
-    use_contract_period_feature, use_departure_subregion_channel,
-    use_eta_channel, AND use_moe_ffn/n_experts — these aren't stored in
-    the checkpoint file itself, only the raw tensors are (a mismatch
-    changes input shapes or parameter counts, so it'll raise the same
-    shape/count-mismatch error as any other wrong architecture argument
-    — EXCEPT use_temporal_encoding, which doesn't change parameter
-    shapes at all (self.te's own weights are unaffected either way, only
-    whether its output gets used), so a mismatch there would silently
-    load successfully but not reproduce the trained model's actual
-    behavior — still worth passing correctly, just won't be caught by a
-    shape-mismatch error the way the others would be).
-    Returns (repr_layer, model), ready for inference — no training needed.
+       """Reconstructs the model for inference from a saved checkpoint.
+
+    Builds a fresh RepresentationLayer and model with the given architecture
+    arguments, forces weight creation with a dummy forward pass, then loads
+    the trained weights from a checkpoint written by save_trained_weights()
+    or save_checkpoint().
+
+    The checkpoint file stores raw weight tensors only; the architecture is
+    not stored with them. Every architecture argument must therefore match
+    the values used at training time, including all channel switches
+    (use_spatial_channel, use_local_pattern_channel,
+    use_departure_port_channel, use_ship_size_channel,
+    use_temporal_encoding, use_declared_destination, use_ship_history,
+    use_fleet_context, use_recency_bias, use_contract_period_feature,
+    use_departure_subregion_channel, use_eta_channel) as well as
+    use_moe_ffn and n_experts.
+
+    Mismatch behavior: a wrong value changes input shapes or parameter
+    counts, so loading fails with a shape or count mismatch error. The one
+    exception is use_temporal_encoding: it does not change any parameter
+    shapes (it only controls whether the temporal encoding's output is
+    used), so a mismatch there loads without error but silently fails to
+    reproduce the trained model's behavior. It must still be passed
+    correctly; it is simply not caught by the shape check.
+
+    Returns (repr_layer, model), ready for inference without training.
     """
     d_ff = d_ff or d_model * 2
     repr_layer = RepresentationLayer(d_model, n_ports, n_size_classes, gru_layers=gru_layers,
@@ -179,18 +179,17 @@ def load_trained_model(weights_path, n_ports, n_size_classes, n_classes,
     return repr_layer, model
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# [3b] FEATURE / CHANNEL CONTRIBUTION (diagnostic, not in the paper)
-#
+
+# [3b] FEATURE / CHANNEL CONTRIBUTION (diagnostic)
+
 # Two complementary views, both computed from an ALREADY-TRAINED model (no
 # retraining needed, so this is cheap regardless of how long training took):
-#
+
 #  1. Channel-attention summary — reads out the MCA module's own learned
 #     attention weights (Section IV-B1) after a forward pass. This is
 #     exactly what the model itself decided to emphasize among the 4
 #     channels (spatial / local-pattern / departure-port / ship-type),
 #     already computed internally — free to extract, nothing extra to run.
-#
 #  2. Permutation importance — for each individual input feature, shuffle
 #     its values across the batch (breaking that feature's association
 #     with its trajectory while leaving everything else intact) and measure
@@ -201,7 +200,6 @@ def load_trained_model(weights_path, n_ports, n_size_classes, n_classes,
 #     importance read but not a rigorous measure. Requires N_repeat extra
 #     full validation passes per feature — cheap relative to training, but
 #     not free; scales with len(feature_list) * n_repeats * len(val_loader).
-# ═════════════════════════════════════════════════════════════════════════════
 
 
 def _fast_fleet_result_path(work_dir, target_col, condition_name):
@@ -781,7 +779,7 @@ def train_residual_progression_variant(step3data, target_col, n_classes, conditi
                                         n_experts=3,
                                         use_departure_gate=False, departure_embed_dim=8,
                                         use_ship_history=True, stratify=True, stratify_by_pair=False, use_declared_destination=False,
-                                        epochs=6, batch_size=32, d_model=128, val_frac=0.15, test_frac=0.15, seed=42,
+                                        epochs=6, batch_size=32, d_model=32, val_frac=0.15, test_frac=0.15, seed=42,
                                         n_casp_layers=2, n_heads_mca=2, n_heads_msa=4, d_ff=None,
                                         history_gat_layers=2, history_gat_heads=4, work_dir=None, skip_existing=True,
                                         track_progression_band_losses=False,
@@ -1091,24 +1089,14 @@ def train_residual_progression_variant(step3data, target_col, n_classes, conditi
         active_vessel_port_to_subregion=active_vessel_port_to_subregion,
         active_vessel_history_stats_cache=active_vessel_history_stats_cache)
 
-    # seed controls the split above (via _make_split/loaders) — but NOT,
-    # until now, the model's own weight initialization, since nothing in
-    # this project ever called any seeding function before model
-    # construction. That meant "same seed" only ever guaranteed "same
-    # data partition" — two runs with identical seed still got two
-    # different, uncontrolled random initializations, which could
-    # plausibly explain a real, non-trivial accuracy gap on its own with
-    # only a few epochs of training. keras.utils.set_random_seed(seed) —
-    # NOT torch.manual_seed(seed) alone, which was tried first and
-    # verified insufficient: two models built with identical
-    # torch.manual_seed() calls still had DIFFERENT initial weights,
-    # since Keras 3's own lazy weight-building draws on more than just
-    # PyTorch's own RNG internally. keras.utils.set_random_seed() is
-    # Keras's own comprehensive seeding utility and was verified directly
-    # (not assumed) to produce bit-identical initial weights across
-    # independently-constructed models before adopting it here. Placed
-    # HERE (after the split/loaders, right before construction) so it
-    # controls ONLY weight init, not data partitioning or shuffle order.
+    
+    # Seed the model's weight initialization (the data split is already
+    # seeded via _make_split). keras.utils.set_random_seed(seed) is used
+    # because torch.manual_seed() alone was verified insufficient under
+    # Keras 3's lazy weight building. Called immediately before model
+    # construction so it affects weight init only, not the split or
+    # shuffle order.
+                                            
     keras.utils.set_random_seed(seed)
 
     active_vessel_sigma_kwargs = {}
@@ -1191,27 +1179,23 @@ def train_residual_progression_variant(step3data, target_col, n_classes, conditi
         if resumed is not None:
             start_epoch, train_hist, val_hist = resumed
             print(f"    [epoch checkpoint] resuming from epoch {start_epoch+1}/{epochs} ({start_epoch} already completed)")
-            # NOTE: per-band history does NOT resume from an epoch
-            # checkpoint (only the aggregate train_hist/val_hist does,
-            # via the existing mechanism) -- resuming with
-            # track_progression_band_losses=True starts per-band
-            # tracking fresh from start_epoch, so its own history will
-            # be shorter than train_hist/val_hist in that specific case.
-            # Uncommon in practice (this flag is for one-off diagnostic
-            # runs, not routine training), but worth knowing.
+    # NOTE: when resuming from an epoch checkpoint with
+    # track_progression_band_losses=True, only the aggregate
+    # train_hist/val_hist are restored; per-band tracking starts fresh
+    # from start_epoch, so the per-band history will be shorter than the
+    # aggregate one. Rarely relevant: this flag is meant for one-off
+    # diagnostic runs, not routine training.
 
-    # early_stopping_patience=None (default): no early stopping, EXACTLY
-    # current behavior -- runs the full, fixed epochs count regardless of
-    # val_hist. When set to an integer N, stops (breaks out of the loop
-    # early, does NOT retroactively undo already-completed epochs) once
-    # N consecutive epochs have passed with no new best val loss. Does
-    # NOT restore the best epoch's own weights automatically -- the
-    # model's weights at break time are whatever the LAST epoch trained
-    # (patience epochs past the best one), same convention the epoch
-    # checkpoint mechanism already uses elsewhere (most recent, not
-    # best). Track_progression_band_losses interacts fine with this --
-    # per-band history simply ends at the same, possibly-earlier epoch
-    # as the aggregate history.
+    
+    # early_stopping_patience: None (default) disables early stopping and
+    # runs the full fixed epoch count. An integer N stops training once N
+    # consecutive epochs pass without a new best validation loss.
+    # Two behaviors to be aware of: (1) stopping does not restore the best
+    # epoch's weights; the model keeps the weights of the LAST epoch
+    # trained (N epochs past the best), matching the epoch-checkpoint
+    # convention used elsewhere (most recent, not best). (2) With
+    # track_progression_band_losses=True, per-band history simply ends at
+    # the same, possibly earlier, epoch as the aggregate history.
     best_val_loss = min(val_hist) if val_hist else float("inf")
     epochs_since_best = 0
 
