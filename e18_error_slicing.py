@@ -1,12 +1,10 @@
-# =============================================================================
 # E18 — error slice & dice (lanes, discharge regions, margins, taxonomy v2)
 # Migrated verbatim from Main_forGitHub.ipynb cells [217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 217]
-# ----------------------------------------------------------------------
+
 import glob, os
 hits = sorted(glob.glob(os.path.join(WORK_DIR, "Results", f"{TARGET_COL}_*no*seed42*.json")))
 for h in hits: print(os.path.basename(h))
@@ -14,15 +12,22 @@ for h in hits: print(os.path.basename(h))
 hits2 = sorted(glob.glob(os.path.join(WORK_DIR, "Results", f"{TARGET_COL}_*e3*.json")))
 for h in hits2[:12]: print(os.path.basename(h))
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 218]
-# ----------------------------------------------------------------------
-# =============================================================================
-# E18-COLLECT -- per-ablation pooled TEST predictions (eval-only reloads)
-# =============================================================================
-# Reloads each E3 channel-ablation checkpoint and collects per-step TEST
-# predictions -> arbitrary slicing downstream. Prereqs: E17 arrays + H0
-# lookups (t_nprior etc. optional) + port_to_sub + final_runs.
+
+# E18-COLLECT: pooled TEST predictions for every channel ablation
+#
+# Reloads each E3 channel-ablation checkpoint (evaluation only, no
+# retraining) and collects its per-step TEST predictions into one pooled
+# table, so that any downstream slicing (by lane, discharge region,
+# margin, progression band) can be computed without touching the models
+# again.
+#
+# Prerequisites, expected in the shared namespace before this cell runs:
+# the E18 base arrays built earlier in this file, the voyage-history
+# lookups (t_nprior and related, optional), the port_to_sub mapping, and
+# final_runs from the test-side training (E0-C).
+
 import numpy as np, pandas as pd, os
 ABL = {   # label -> (condition pattern, trainer kwargs delta)
  "No spatial":       ("e3_base_channel_ablation_no_spatial_channel_final_main_seed{s}",
@@ -69,12 +74,17 @@ for label, (pat, delta) in ABL.items():
     print(f"{label}: damage overall {100*(t_ok.mean() - ABL_PRED[label].mean()):+.2f}pp")
 print("E18 collection done:", list(ABL_PRED))
 
-# ----------------------------------------------------------------------
-# [notebook cell 219]
-# ----------------------------------------------------------------------
-# =============================================================================
-# E18-SLICE -- channel damage by stage/days/length/lane (all tables)
-# =============================================================================
+
+# E18-SLICE: channel damage by voyage stage, days to arrival, voyage
+# length, and trade lane (all tables)
+#
+# For each E3 channel ablation, measures the accuracy drop relative to the
+# full model ("damage" attributable to removing that channel) and breaks
+# it out along four slicings of the pooled TEST predictions: progression
+# stage, days to arrival, voyage length, and trade lane. Produces the
+# full set of slice tables in one pass; interpretation follows in the
+# cells below.
+
 from IPython.display import display, HTML
 # ---- tdep construction (departure subregion per pooled test step) ----------
 import numpy as np, pandas as pd
@@ -117,12 +127,17 @@ for sname, key in SLICES.items():
     tab.to_csv(os.path.join(WORK_DIR, f"e18_damage_by_{sname}.csv"))
 print("all slice tables saved (e18_damage_by_*.csv)")
 
-# ----------------------------------------------------------------------
-# [notebook cell 220]
-# ----------------------------------------------------------------------
-# =============================================================================
-# E18-LANES -- stage-accuracy plots: key LOAD regions + key DISCHARGE regions
-# =============================================================================
+
+# E18-LANES: accuracy-by-stage plots for the key load regions and the key
+# discharge regions
+#
+# Plots accuracy as a function of voyage stage, one curve per region, for
+# the highest-volume LOAD (departure) regions and, separately, the
+# highest-volume DISCHARGE (arrival) regions. Companion visualization to
+# the E18-SLICE tables: the same pooled TEST predictions, shown as stage
+# curves so regional differences in when accuracy is reached become
+# visible directly.
+
 import matplotlib.pyplot as plt
 bins5 = np.clip((tfrac * 20).astype(int), 0, 19); xs = np.arange(20)*5 + 2.5
 KEY_DEST = ["NEAsia_China", "SEAsia", "India SC", "MED", "NWE", "SAM"]
@@ -170,16 +185,20 @@ disc = pd.DataFrame(rows)
 display(HTML("<b>Key discharge regions -- stage accuracy</b>")); display(disc)
 disc.to_csv(os.path.join(WORK_DIR, "e18_discharge_regions.csv"), index=False)
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 221]
-# ----------------------------------------------------------------------
-# =============================================================================
-# E18-BLOCKS -- MCA / TSA block ablations (NEW TRAININGS: 2 x 3 seeds)
-# =============================================================================
-# The trainer exposes no on/off flag for the attention blocks; the honest
-# minimal ablation reduces each block to a single head (capacity ablation,
-# n_heads_mca=1 / n_heads_msa=1) -- state it as such in the report. A true
-# removal would need an architecture patch; refused here by design.
+
+# E18-BLOCKS: attention-block ablations (NEW TRAINING: 2 conditions x 3 seeds)
+#
+# Unlike the eval-only cells above, this trains new models. The trainer
+# exposes no on/off flag for the two attention blocks (channel attention
+# and causal self-attention), so the minimal honest ablation reduces each
+# block to a single head (n_heads_mca=1, n_heads_msa=1). These are
+# CAPACITY ablations, not removals: results measure what the extra heads
+# contribute, not what the block as a whole contributes, and must be
+# interpreted and described accordingly. A true removal would require an
+# architecture patch and is deliberately not done here.
+
 BLOCKS = {"MCA 1-head (vs 2)": dict(n_heads_mca=1),
           "MSA/TSA 1-head (vs 4)": dict(n_heads_msa=1)}
 BLK = {}
@@ -208,19 +227,11 @@ rows = [dict(block=lb,
 print(pd.DataFrame(rows).to_string(index=False),
       "\ncompare against the E0 B mean 80.64 (delta = mean - 80.64)")
 
-# ----------------------------------------------------------------------
-# [notebook cell 222]
-# ----------------------------------------------------------------------
-# =============================================================================
-# E18-COLLECT -- per-ablation pooled TEST predictions (eval-only reloads)
-# =============================================================================
-# Reloads each E3 channel-ablation checkpoint and collects per-step TEST
-# predictions -> arbitrary slicing downstream. Prereqs: E17 arrays + final_runs.
-import numpy as np, pandas as pd, os
 
-# =============================================================================
+# [notebook cell 222]
+
+
 # E17-PREREQ -- TEST-side pooled arrays + per-voyage durations
-# =============================================================================
 import numpy as np, pandas as pd
 _S, _T, _P, _PR, _F = [], [], [], [], []
 for s_ in SEEDS:
@@ -290,12 +301,11 @@ for label, (pat, delta) in ABL.items():
           f"{100*(t_ok.mean() - ABL_PRED[label].mean()):+.2f}pp")
 print("E18 collection done:", list(ABL_PRED))
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 223]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E20 -- USGC structural misses: what is predicted instead, and why
-# =============================================================================
+
 # Prereqs: E17 arrays (tseg/ttrue/tpred/tfrac), tdep/t_load/t_dest (E18).
 import numpy as np, pandas as pd, matplotlib.pyplot as plt
 from IPython.display import display, HTML
@@ -395,9 +405,9 @@ print("reading: the mid-voyage captor per lane (stacked bars) adjudicates "
       "majority-class capture -- expected MED for true-NWE, NEAsia_China "
       "for true-India; the 50%-crossing stage per lane marks the fork.")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 224]
-# ----------------------------------------------------------------------
+
 # ---- port_to_sub / tdep / t_load / t_dest (one-time per kernel) ------------
 # Prereqs: data, TARGET_COL (spine) + tseg/ttrue (E17-PREREQ).
 import numpy as np, pandas as pd
@@ -422,12 +432,11 @@ print(f"USGC steps: {int((t_load == 'USGC').sum()):,}  "
       f"(expect ~82,704 to match H8)")
 print(f"unmapped departures: {(tdep < 0).mean()*100:.1f}%")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 225]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E21 -- corridor misses: information present or absent? (margins + identity)
-# =============================================================================
+
 import numpy as np, pandas as pd
 
 lm = t_load == "USGC"
@@ -491,20 +500,19 @@ print("\nreading: (a) high in_top2 + small margin = information present, "
       "missed mid-voyage = identity signal present in inputs but not "
       "consumed mid-voyage -> routing/architecture fix.")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 226]
-# ----------------------------------------------------------------------
+
 print([n for n in dir() if n.isidentifier() and len(n) <= 6 and
        not n.startswith("_")][:40])
 # then map (adjust to what prints -- likely R/L/F/S or reps/labs/fracs/segs):
 rep0, rtrue, rfrac, rseg = R, L, F, S
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 227]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E22-BOTH (seed 123) -- MED/NWE and India/SEAsia probes, one pass
-# =============================================================================
+
 import numpy as np, matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
@@ -537,12 +545,11 @@ for nA, nB, cA, cB, fname in PAIRS:
     plt.savefig(os.path.join(WORK_DIR, f"{fname}.png"), dpi=150); plt.show()
     print(f"{nA} vs {nB}: probes {probes} vs baselines {bases}")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 228]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E18-LANES-EXT -- accuracy-by-stage panels for four more load regions
-# =============================================================================
+
 # Prereqs: E17 arrays + t_load/t_dest in kernel (same as the USGC/ME panels).
 import numpy as np, pandas as pd, matplotlib.pyplot as plt
 
@@ -585,12 +592,11 @@ for load in LOADS:
     summ.to_csv(os.path.join(WORK_DIR, f"e18_lanes_{load.replace(' ','')}.csv"),
                 index=False)
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 229]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E23 -- NEAsia loadings: the Canada and SEAsia misses, dissected
-# =============================================================================
+
 # Prereqs: E17 arrays, t_load/t_dest, tprobs; H1's modal_before if built.
 import numpy as np, pandas as pd
 
@@ -644,12 +650,11 @@ for dst in ["Canada", "SEAsia"]:
     print(f"  training NEAsia departures to {dst}: {n_dst} of {len(tr_ne)} "
           f"({100*n_dst/max(len(tr_ne),1):.1f}%)")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 230]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E24 -- share of all errors accounted for by the investigated lanes
-# =============================================================================
+
 # Lane set: USGC->{MED, NWE, India SC} + NEAsia->{Canada, SEAsia}.
 import numpy as np, pandas as pd
 
@@ -685,12 +690,11 @@ print("\nreading: share_of_all_errors = how much of the model's total error "
       "the report's case studies explain; concentration = that share divided "
       "by the lanes' share of steps (x1 = proportionate, >1 = error hotspot).")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 231]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E24-PLOT -- error share of the investigated lanes, by stage
-# =============================================================================
+
 import numpy as np, pandas as pd, matplotlib.pyplot as plt
 
 LANES = [("USGC", "MED"), ("USGC", "NWE"), ("USGC", "India SC"),
@@ -737,12 +741,11 @@ print(pd.DataFrame({"stage": [b[0].replace(chr(10)," ") for b in BANDS],
                     "step_share": np.round(steps, 1),
                     "n_misses": ns}).to_string(index=False))
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 232]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E25 -- which lanes hold the misses: top lanes to 50% of errors, per stage
-# =============================================================================
+
 import numpy as np, pandas as pd
 
 miss = ~t_ok
@@ -770,12 +773,11 @@ for lab, bm in BANDS:
     top.to_csv(os.path.join(WORK_DIR,
         f"e25_top_miss_lanes_{lab.split()[0].lower()}.csv"))
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 233]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E25-PLOT v2 -- top miss lanes per stage, coloured by taxonomy mode
-# =============================================================================
+
 # Every bar is coloured by the error mode the lane belongs to (master table).
 import numpy as np, pandas as pd, matplotlib.pyplot as plt, os
 from matplotlib.patches import Patch
@@ -854,12 +856,11 @@ plt.savefig(os.path.join(WORK_DIR, "e25_top_miss_lanes_bymode.png"), dpi=150,
             bbox_inches="tight")
 plt.show()
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 234]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E26 -- USGC -> Africa: full miss dissection + intra-regional error share
-# =============================================================================
+
 import numpy as np, pandas as pd
 
 inv = {v: k for k, v in subregion_names.items()}
@@ -928,12 +929,11 @@ for lab, bm in BANDS:
           f"(step share {100*(intra & bm).sum()/max(bm.sum(),1):.1f}%, "
           f"n={int(n_in):,})")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 235]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E27 -- India SC -> India SC: full profile of the intra-regional miss
-# =============================================================================
+
 import numpy as np, pandas as pd
 
 INDID = inv["India SC"]
@@ -984,12 +984,11 @@ if "DEP_PORT_ID" in sub.columns and "ARR_PORT_ID" in sub.columns:
              .sort_values(ascending=False).head(8))
     print("(e) top within-India port pairs (voyages):"); print(pairs.to_string())
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 236]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E28 -- final synthesis: error share by identified problem type, per stage
-# =============================================================================
+
 import numpy as np, pandas as pd
 
 L = lambda ld, ds: (t_load == ld) & (t_dest == ds)
@@ -1024,12 +1023,11 @@ e28 = pd.DataFrame(rows)
 print(e28.to_string(index=False))
 e28.to_csv(os.path.join(WORK_DIR, "e28_error_taxonomy.csv"), index=False)
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 237]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E29 -- profiling the UNcharacterised errors: candidate new types
-# =============================================================================
+
 # Prereqs: E17 arrays, t_load/t_dest, tprobs; seg_modal (E21b) optional.
 import numpy as np, pandas as pd
 
@@ -1092,12 +1090,11 @@ for lab, bm in BANDS:
     print(f"  {lab}: p_true {p_true_all[mm].mean():.3f}   "
           f"in_top2 {100*in2[mm].mean():.1f}%   n={int(mm.sum()):,}")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 238]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E30 -- top-1 vs top-2 accuracy by stage (the decision-surface bound)
-# =============================================================================
+
 import numpy as np, pandas as pd
 
 top2 = np.argsort(tprobs, axis=1)[:, -2:]
@@ -1116,12 +1113,11 @@ e30 = pd.DataFrame(rows)
 print(e30.to_string(index=False))
 e30.to_csv(os.path.join(WORK_DIR, "e30_top1_top2.csv"), index=False)
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 239]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E30-PLOT -- top-1 vs top-2 accuracy by stage
-# =============================================================================
+
 import numpy as np, matplotlib.pyplot as plt
 
 xs = ["0-20%", "20-40%", "40-60%", "60-80%", "80-100%"]
@@ -1151,12 +1147,11 @@ plt.savefig(os.path.join(WORK_DIR, "e30_top1_top2.png"), dpi=150,
             bbox_inches="tight")
 plt.show()
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 240]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E31 -- taxonomy v2: hierarchical, mutually exclusive typing of ALL misses
-# =============================================================================
+
 import numpy as np, pandas as pd
 
 L = lambda ld, ds: (t_load == ld) & (t_dest == ds)
@@ -1207,12 +1202,11 @@ print(e31.to_string(index=False))
 print("\ncolumn sums:", [round(e31[c].sum(), 1) for c in ["Early","Mid","Late"]])
 e31.to_csv(os.path.join(WORK_DIR, "e31_taxonomy_v2.csv"), index=False)
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 241]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E32 -- the fork, magnified: fine late bins + flip-point for India/SEAsia
-# =============================================================================
+
 import numpy as np, pandas as pd
 for ld, ds in [("USGC", "India SC"), ("USGC", "SEAsia"), ("USGC", "NWE")]:
     m = (t_load == ld) & (t_dest == ds)
@@ -1234,12 +1228,11 @@ for ld, ds in [("USGC", "India SC"), ("USGC", "SEAsia"), ("USGC", "NWE")]:
           f"never-flips (wrong at final step): "
           f"{100*(flips > 0.97).mean():.0f}% of voyages")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 242]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E33 -- which channel carries which prior: per-lane ablation deltas
-# =============================================================================
+
 import numpy as np, pandas as pd
 LANES = [("NEAsia_China","SEAsia"), ("India SC","India SC"),
          ("USGC","NWE"), ("USGC","India SC"), ("USGC","Africa"),
