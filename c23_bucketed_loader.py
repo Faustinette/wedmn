@@ -1,21 +1,7 @@
-# =============================================================================
 # Section 4.4 — Bucketed segment loader (Step4b)
-# Migrated verbatim from Main_forGitHub.ipynb cells [48].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
-# [notebook cell 48]
-# ----------------------------------------------------------------------
-
-# CHANGE THE NAME BucketedWAYDataset
-
-# =============================================================================
-# LIB CELL L3 -- Step4b_bucketed_loader (verbatim; 1 import stripped)
-# =============================================================================
 """
-Step4b_bucketed_loader.py
-─────────────────────────────────────────────────────────────────────────────
 STEP 4b — BUCKETED DATA LOADER
 
 Motivation (from Step 3b's own diagnostic): a random sample of 4 segments
@@ -45,7 +31,6 @@ port-level task.
 
 Segments with a missing/unmapped target label are dropped (a warning is
 printed with the count) — can't train against a NaN label.
-─────────────────────────────────────────────────────────────────────────────
 """
 
 import os
@@ -57,11 +42,13 @@ import keras
 
 
 class BucketedWAYDataset(keras.utils.PyDataset):
-    """Yields (inputs, key_padding_mask, labels, lengths) per batch —
-    designed for a custom training loop (not model.fit()), since GD
-    reweighting (Step4a's gradient_dropout_weights) needs per-batch instance
-    lengths, which model.fit()'s standard (x,y) / (x,y,sample_weight)
-    interface doesn't naturally expose the way this needs."""
+       """Yields (inputs, key_padding_mask, labels, lengths) per batch.
+
+    Designed for a custom training loop rather than model.fit(): the
+    length-balanced loss weighting (gradient_dropout_weights) needs each
+    batch's instance lengths, which the standard (x, y) or
+    (x, y, sample_weight) fit() interface does not expose.
+    """
 
     def __init__(self, step3data: Step3Data, target_col="DEST_REGION_ID",
                  batch_size=32, bucket_mult=8, shuffle=True, seed=0,
