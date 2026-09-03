@@ -1,65 +1,54 @@
-# =============================================================================
 # Section 4.5 — Ship-history channel (GNN/GAT)
-# Migrated verbatim from Main_forGitHub.ipynb cells [50].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
-# [notebook cell 50]
-# ----------------------------------------------------------------------
-# =============================================================================
-# LIB CELL L4 -- Step4d_ship_history (entire, verbatim)
-# =============================================================================
 """
-Step4d_ship_history.py
-─────────────────────────────────────────────────────────────────────────────
-STEP 4d — SHIP-SPECIFIC CONTEXT (Model Block 2): DAG + GNN over voyage history
+# SHIP-SPECIFIC CONTEXT: DAG + GNN OVER VOYAGE HISTORY
+#
+# Extends the per-vessel history features (previously a few causal summary
+# statistics) into a learned representation: each vessel's past voyages
+# become nodes in a directed acyclic graph, a graph attention network
+# aggregates them into a trade-lane profile embedding, and that embedding
+# enters the main model as an additional (5th) representation channel.
+#
+# No architecture change is required for the extra channel:
+# MultiheadChannelAttention infers its channel count from the input shape
+# at build time (C = input_shape[-2]), and the encoder layer's channel
+# replacement and residual wiring index channels by DESIGNATED_CHANNEL
+# rather than assuming exactly 4. This was confirmed by passing a
+# 5-channel tensor through the unchanged encoder before this module was
+# built.
+#
+# GRAPH DESIGN
+#   Nodes: the vessel's own past voyages (segments), strictly before the
+#     current segment's departure; never the segment itself, never anything
+#     later. Capped to the most recent MAX_HISTORY voyages.
+#   Edges (all directed forward in time, which keeps the graph acyclic and
+#   matches the causal discipline used throughout the pipeline):
+#     1. Chronological backbone: voyage i -> voyage i+1
+#     2. Same departure port:    voyage i -> voyage j (i < j)
+#     3. Same arrival port:      voyage i -> voyage j (i < j)
+#   Edge types 2 and 3 let the graph capture recurring trade-lane patterns
+#   across non-adjacent voyages: a vessel alternating between two routes
+#   gets direct edges between same-route voyages, not only the
+#   chronological chain between them.
+#
+# CAUSALITY: history graphs are built from the vessel's segment list
+# indexed by position, not by timestamp comparison, so "prior segments"
+# means everything strictly before the current segment's position in the
+# vessel's chronological list. This avoids ambiguity from duplicate or
+# missing timestamps. The tests below verify that a segment's history
+# graph never contains the segment itself or anything after it, including
+# under duplicate timestamps and out-of-order input.
+#
+# NODE FEATURES: departure and arrival port, embedded via the same shared
+# port-embedding table used elsewhere (one port-identity space, not a
+# separate table), plus voyage duration and recency as normalized numeric
+# features.
+#
+# COLD START: a vessel's first voyage, with zero history, receives a
+# single learned fallback vector rather than a zero vector, so "no
+# history" is a distinct trainable state instead of an arbitrary default.
 
-Extends the causal per-vessel history already used in Step 3a (which collapsed
-a vessel's past voyages into a few summary statistics) into a genuine LEARNED
-representation: each vessel's past voyages become nodes in a directed acyclic
-graph, and a graph attention network aggregates them into a "trade-lane
-profile" embedding, fed into the main model as a 5th representation channel.
-
-WHY THIS DOESN'T NEED ANY CHANGES TO THE CASP ARCHITECTURE (verified, not
-assumed): MultiheadChannelAttention infers its channel count C from the input
-shape at build time (`C = input_shape[-2]`), and the channel-replacement /
-residual wiring in CASPLayer indexes channels by DESIGNATED_CHANNEL rather
-than assuming exactly 4 — confirmed by running a 5-channel tensor through the
-existing CASPLayer/WAYModel unchanged before writing any of this file.
-
-GRAPH DESIGN
-    Nodes   = a vessel's own past voyages (segments), strictly BEFORE the
-              current segment's departure — never itself, never anything
-              later. Capped to the most recent MAX_HISTORY voyages.
-    Edges (all directed FORWARD in time only — this is what keeps the graph
-    acyclic, and is the same causal discipline used everywhere else in this
-    pipeline: a voyage can only be influenced by earlier ones):
-      1. Chronological backbone: voyage i -> voyage i+1
-      2. Same-departure-port:    voyage i -> voyage j (i<j), same dep_port
-      3. Same-arrival-port:      voyage i -> voyage j (i<j), same arr_port
-    (2) and (3) are what let the graph capture recurring trade-lane patterns
-    across NON-adjacent voyages — e.g. a vessel that alternates between two
-    routes gets edges connecting same-route voyages directly, not just
-    through the chronological chain between them.
-
-CAUSALITY GUARANTEE: graphs are built from a vessel's segment list INDEXED
-BY POSITION (not by timestamp comparison), so "prior segments" means
-"everything strictly before the current segment's own position in that
-vessel's chronological list" — avoids any edge-case ambiguity from duplicate
-or missing timestamps. Verified directly in the tests below: a segment's
-history graph never contains that segment itself or anything after it,
-under adversarial conditions (duplicate timestamps, out-of-order input).
-
-Node features: departure port + arrival port (embedded via the SAME shared
-port-embedding table used elsewhere — one "port identity" space, not a
-separate table), plus voyage duration and recency (both normalized numeric
-features).
-
-Cold start (a vessel's first-ever voyage, zero history): a single LEARNED
-fallback vector, not a zero vector — lets the model represent "no history"
-as a distinct, trainable state rather than an arbitrary default.
-─────────────────────────────────────────────────────────────────────────────
 """
 
 import os
@@ -75,9 +64,8 @@ DURATION_NORM = 500.0     # rough normalizer for duration_h (hours)
 RECENCY_NORM_DAYS = 365.0 # rough normalizer for "days since that past voyage"
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+
 # [1] VESSEL HISTORY INDEX — precompute per-vessel chronological segment lists
-# ═════════════════════════════════════════════════════════════════════════════
 
 class VesselHistoryIndex:
     """Precomputes, once, each vessel's own segments sorted chronologically —
@@ -169,24 +157,32 @@ def build_edge_mask(history_df):
     return mask
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+
 # [2] GRAPH ATTENTION LAYER
 #
-# A GAT layer is structurally "self-attention restricted to graph neighbors"
-# — the exact same masked multi-head attention machinery already built and
-# tested for MSA (Step4a_CASP.py), just swapping the causal upper-triangular
-# mask for an arbitrary edge-adjacency mask. Reimplemented here (rather than
-# importing MaskedMultiheadSelfAttention directly) so the mask is a required
-# explicit argument, not an internally-computed causal one — makes misuse
-# (accidentally getting a causal mask here) impossible by construction.
-# ═════════════════════════════════════════════════════════════════════════════
+# A GAT layer is structurally self-attention restricted to graph
+# neighbors: the same masked multi-head attention machinery as the
+# encoder's self-attention, with the causal upper-triangular mask
+# replaced by an edge-adjacency mask. It is reimplemented here, rather
+# than reusing MaskedMultiheadSelfAttention directly, so that the mask
+# is a required explicit argument instead of an internally computed
+# causal one, which makes accidentally applying a causal mask here
+# impossible by construction.
 
 class GraphAttentionLayer(keras.layers.Layer):
-    """Input: x [batch, K, d], edge_mask [batch, K, K] (1 = i can send to j).
-    Output: [batch, K, d]. A node with no incoming edges (row of zeros in
-    edge_mask, i.e. nothing points TO it) still passes through via its own
-    residual connection (added by the caller) — it just doesn't aggregate
-    anyone else's information at this layer."""
+    """Graph attention over history nodes.
+
+    Input: x [batch, K, d]; edge_mask [batch, K, K], where
+    edge_mask[i, j] = 1 means node i sends to node j (transposed
+    internally to query/key alignment). Output: [batch, K, d].
+
+    Self-loops are always added internally: every node attends to itself
+    in addition to its in-neighbors. A node with no incoming edges
+    (its column in edge_mask is all zeros, meaning nothing points to it)
+    therefore attends only to itself at this layer; it aggregates no
+    information from other nodes, and the caller's residual connection
+    passes its input through as usual.
+    """
 
     def __init__(self, d_model, n_heads, **kwargs):
         super().__init__(**kwargs)
@@ -233,9 +229,8 @@ class GraphAttentionLayer(keras.layers.Layer):
         return ops.matmul(out, self.W_out)
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+
 # [3] ATTENTION POOLING — collapse K node embeddings into one graph embedding
-# ═════════════════════════════════════════════════════════════════════════════
 
 class AttentionPool(keras.layers.Layer):
     """A single learned query vector attends over all K (valid) nodes and
@@ -314,15 +309,14 @@ class AttentionPool(keras.layers.Layer):
         return pooled
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+
 # [4] SHIP HISTORY GNN — full module: node embedding -> GAT layers -> pooling
-# ═════════════════════════════════════════════════════════════════════════════
 
 class ShipHistoryGNN(keras.layers.Layer):
     """Produces the per-segment "trade-lane profile" embedding from a
     vessel's causal voyage-history DAG. Reuses the shared port-embedding
     table (same one used for departure port / declared destination
-    elsewhere) for node departure/arrival ports — one consistent "port
+    elsewhere) for node departure/arrival ports, one consistent "port
     identity" space throughout the model, not a separate table here.
 
     Cold start (zero prior voyages): outputs a single LEARNED fallback
@@ -374,31 +368,34 @@ class ShipHistoryGNN(keras.layers.Layer):
         return has_history * pooled + (1.0 - has_history) * cold
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+
 # [5] BATCH PREPARATION — build padded GNN inputs for a batch of segments
-# ═════════════════════════════════════════════════════════════════════════════
 
 def prepare_history_batch(history_index: VesselHistoryIndex, seg_ids, none_port_id,
                            max_history=MAX_HISTORY, use_contract_period_feature=False):
-    """For each segment in seg_ids, builds its causal history graph via
-    VesselHistoryIndex (already tested for causality above), then pads all
-    graphs in the batch to the same K (local batch max, capped at
-    max_history) — same dynamic-padding-per-batch approach used throughout
-    this pipeline (Step3b's prepare_batch), not a fixed global size.
+    """Builds the padded history-graph batch for a list of segments.
 
-    use_contract_period_feature: if True, adds a 3rd numeric node feature —
-    1.0 if that PAST voyage's own departure falls on-or-after the most
-    recent January 1st BEFORE the CURRENT segment's own departure (i.e.
-    "happened under the same time-charter contract period as the voyage
-    being predicted"), else 0.0. Anchored to the CURRENT segment's own
-    departure date (via history_index.own_dep_ts), not the most recent
-    prior voyage's. Default False keeps node_numeric's shape at
-    [batch,K,2], unchanged from before this feature existed.
+    For each segment in seg_ids, the causal history graph is built via
+    VesselHistoryIndex (causality is verified by the tests in this
+    module), and all graphs in the batch are padded to the same K, the
+    batch-local maximum capped at max_history. Padding is dynamic per
+    batch, consistent with the trajectory batching elsewhere in the
+    pipeline, rather than a fixed global size.
 
-    Returns a dict of numpy arrays: node_dep_port_id, node_arr_port_id
-    [batch,K], node_numeric [batch,K,2] or [batch,K,3], edge_mask
-    [batch,K,K], node_mask [batch,K].
+    use_contract_period_feature: if True, adds a third numeric node
+    feature marking whether a past voyage falls in the same contract
+    period as the segment being predicted: 1.0 if that past voyage's
+    departure is on or after the most recent January 1st preceding the
+    CURRENT segment's departure (via history_index.own_dep_ts), else
+    0.0. The anchor is the current segment's departure date, not the
+    most recent prior voyage's. Default False keeps node_numeric at
+    shape [batch, K, 2].
+
+    Returns a dict of numpy arrays: node_dep_port_id and
+    node_arr_port_id [batch, K]; node_numeric [batch, K, 2] or
+    [batch, K, 3]; edge_mask [batch, K, K]; node_mask [batch, K].
     """
+                               
     histories = [history_index.history_for(sid, max_history=max_history) for sid in seg_ids]
     K = max(1, max(len(h) for h in histories))  # at least 1 so shapes are never zero-sized
     batch = len(seg_ids)
@@ -440,18 +437,23 @@ def prepare_history_batch(history_index: VesselHistoryIndex, seg_ids, none_port_
 
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 # [6] VISUALIZATION — draw a vessel's actual voyage-history DAG
-# ═════════════════════════════════════════════════════════════════════════════
+
 
 def plot_vessel_history_graph(history_index, imo, port_names=None, save_path=None,
                                max_history=MAX_HISTORY):
-    """Draws one vessel's full voyage sequence as a DAG: nodes = voyages in
-    chronological order, edges = the 3 causal relationship types (chrono
-    backbone, same departure port, same arrival port), color-coded. Useful
-    as a sanity check that the graph construction matches real trade
-    patterns (a vessel on a repetitive shuttle route should show dense
-    same-port edges; a tramp trader should show mostly just the backbone)."""
+    """Draws one vessel's voyage-history DAG for visual inspection.
+
+    Nodes are the vessel's voyages in chronological order; edges are the
+    three causal relationship types, color-coded: the chronological
+    backbone, same departure port, and same arrival port.
+
+    Intended as a sanity check that graph construction reflects real
+    trade patterns: a vessel on a repetitive shuttle route should show
+    dense same-port edges, while a tramp trader should show mostly the
+    chronological backbone alone.
+    """
+                                   
     import matplotlib.pyplot as plt
     import matplotlib.patches as mpatches
     import networkx as nx
