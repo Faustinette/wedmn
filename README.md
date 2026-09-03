@@ -1,8 +1,7 @@
-# WEDMN —  Vessel Destination Prediction
+# WEDMN — Vessel Destination Prediction
 
-*This repository contains CODE only; no data or trained checkpoints are
-included.*
-**THE FULL INPUT DATASET AND TRAINED MODEL CHECKPOINTS IS AVAILABLE TO EXAMINERS ON REQUEST DUE TO DATASET**
+**IMPORTANT NOTE : The full raw input dataset and trained model
+checkpoints can be made available to examiners on request.**
 
 Clean, git-uploadable migration of `Main_forGitHub.ipynb`. Every notebook cell
 is preserved **verbatim** (each file marks its source cells), and the runner
@@ -32,7 +31,7 @@ exactly as they did in Jupyter.
 # 1. install dependencies (inside a fresh venv/conda env, Python >= 3.10)
 pip install -r requirements.txt
 
-# 2. place the input data (see "Input files" below) in the working directory —
+# 2. place the input data (see "Input files" below) in the working directory 
 #    either this folder itself, or any folder pointed to by WORK_DIR:
 export WORK_DIR=/path/to/data        # optional; defaults to current directory
 #    (Windows: set WORK_DIR=C:\path\to\data)
@@ -48,6 +47,25 @@ Run `python main.py --help` for the full list. Each experiment resolves its own
 prerequisites (Step-3b data load → model → training library → trained checkpoints).
 Training uses the notebook's `skip_existing=True` guard, so once the 3-seed
 model exists under `$WORK_DIR/Results/` it reloads instead of retraining.
+
+## How this repository works (execution order)
+
+Nothing in `core/` or `experiments/` is run directly — `main.py` is the only
+entry point. Every `--experiment` automatically executes the required steps
+in a fixed order (each at most once):
+
+1. **core** — base imports → input-file check → dataset build (notebook
+   section 3.b) → split, channels, model architecture, loader (4.1-4.6) →
+   training library (5.1)
+2. **train_config** — hyperparameters and sanity tripwires
+3. **trained** — 3-seed main training; with checkpoints present in
+   `Results/`, models are *reloaded, not retrained*
+4. **experiment-specific prerequisites** where needed (E3-prereq, pooled
+   predictions, CV folds)
+5. **the requested experiment file itself**
+
+The full file-by-file sequence is documented at the top of `main.py`, and the
+console prints a banner for every stage and file as it executes.
 
 ## Repository layout
 
@@ -76,16 +94,14 @@ NOT included. The code consumes only the preprocessed model-input files below.
 
 ## Data availability — important note for reviewers
 
-**This repository contains CODE only; no data or trained checkpoints are
+**This repository contains code only; no data or trained checkpoints are
 included.** The underlying AIS-derived dataset contains vessel identifiers
 (IMO numbers) and commercially sensitive movement information, and is
 therefore not publicly distributed. As a consequence, the experiments cannot
 be executed from a fresh clone of this repository alone: the input-file check
 (`core/c02_input_checks.py`) will halt immediately with an explicit
-"MISSING input" message. 
-
-**THE FULL INPUT DATASET AND TRAINED MODEL CHECKPOINTS IS AVAILABLE TO EXAMINERS ON REQUEST**
-
+"MISSING input" message. **The full input dataset and trained model
+checkpoints can be made available to examiners on request.**
 
 ## Input files to place in `$WORK_DIR` (not in git — `.gitignore` excludes them)
 
