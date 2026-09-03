@@ -1,15 +1,11 @@
-# =============================================================================
 # E1-C — Performance investigation
 # Migrated verbatim from Main_forGitHub.ipynb cells [80, 81, 82, 83, 84].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
 # [notebook cell 80]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E17-PREREQ -- TEST-side pooled arrays + per-voyage durations
-# =============================================================================
+
 # All five analyses run on TEST predictions (where the short/long gap lives).
 import numpy as np, pandas as pd
 _S,_T,_P,_PR,_F = [],[],[],[],[]
@@ -35,9 +31,9 @@ THR = 14
 short_m, long_m = tdur <= THR, tdur > THR
 print(f"TEST pooled: {len(tseg):,} rows; short {short_m.sum():,} / long {long_m.sum():,} steps")
 
-# =============================================================================
+
 # A1+A4 POOLED v2 -- model & declaration accuracy vs elapsed days, by length
-# =============================================================================
+
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
@@ -73,12 +69,10 @@ plt.tight_layout()
 plt.savefig(os.path.join(WORK_DIR, "a1a4_pooled_model_captain_days.png"), dpi=150)
 plt.show()
 
-# ----------------------------------------------------------------------
 # [notebook cell 81]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E17-PREREQ -- TEST-side pooled arrays + per-voyage durations
-# =============================================================================
+
 # All five analyses run on TEST predictions (where the short/long gap lives).
 import numpy as np, pandas as pd
 _S,_T,_P,_PR,_F = [],[],[],[],[]
@@ -105,9 +99,9 @@ short_m, long_m = tdur <= THR, tdur > THR
 print(f"TEST pooled: {len(tseg):,} rows; short {short_m.sum():,} / long {long_m.sum():,} steps")
 
 
-# =============================================================================
+
 # A1 (priority 1) -- re-bin by ABSOLUTE elapsed days: artifact test
-# =============================================================================
+
 # If short/long model curves coincide vs elapsed DAYS, the early-band gap is
 # a fraction-binning artifact (unequal calendar information per band).
 import matplotlib.pyplot as plt
@@ -133,9 +127,9 @@ print(a1.pivot_table(index="day_bin", columns="group", values="acc").round(1))
 print("\nreading: coinciding curves = fraction-binning artifact explains the gap.")
 
 
-# =============================================================================
+
 # A4 (priority 2) -- declaration staleness: captain accuracy vs elapsed days
-# =============================================================================
+
 # Captain side of the mirror: departure declarations age on long voyages.
 # Elapsed days proxies days-since-declaration for early-voyage declarations.
 _decl_df = _build_captain_declared_lookup(data, WORK_DIR, subregion_names)
@@ -170,12 +164,11 @@ print("reading: monotone decay + lower long-haul curve = staleness explains "
       "the captain mirror-image; note: early-band declarations on long hauls "
       "were made further from arrival (in days) than any short-haul one can be.")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 82]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # A2 (priority 3) -- composition: Kitagawa/Oaxaca decomposition of the gap
-# =============================================================================
+
 # Split the early-band gap into class-mix vs within-class performance.
 early = tfrac <= 0.20
 def _cls_acc(m):
@@ -194,12 +187,11 @@ ct = pd.crosstab(ttrue[early & (short_m|long_m)], short_m[early & (short_m|long_
 chi2, p, dof, _ = chi2_contingency(ct)
 print(f"class-mix difference: chi2={chi2:.0f} (dof {dof}), p={p:.2e}")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 83]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # A3 (priority 4) -- per-group empirical ceiling (E15-D machinery)
-# =============================================================================
+
 # Bayes-rate estimate per group on the early band, given (cell, dep basin).
 # ===== port_to_sub -- port id -> arrival subregion id (from traj_idx) =====
 port_to_sub = (data.traj_idx.dropna(subset=["ARR_PORT_ID", TARGET_COL])
@@ -234,12 +226,11 @@ for lab, m in [("<= 14d", early & short_m), ("> 14d", early & long_m)]:
 print("reading: similar model-to-ceiling gaps = the groups differ in problem "
       "hardness, not model quality; a LOW short-group ceiling closes the case.")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 84]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # A5 (priority 5) -- formal wrapper: logistic with cluster-robust SEs
-# =============================================================================
+
 # Does 'short' survive controls? Step-level logit, segment-clustered SEs.
 import statsmodels.api as sm
 m5 = early & (short_m | long_m)
