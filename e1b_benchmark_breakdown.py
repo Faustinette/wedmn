@@ -1,7 +1,26 @@
-# E1-B — Benchmark breakdown (early-band bars, accuracy vs duration)
-# Migrated verbatim from Main_forGitHub.ipynb cells [75, 76, 77, 78].
-# Executed by runner.py inside the shared namespace (notebook-kernel style).
-
+# E1-B: BENCHMARK BREAKDOWN BY VOYAGE DURATION (supporting analysis)
+#
+# Slices the E1 model / captain / combined comparison by voyage duration.
+# Four blocks, in order:
+#
+#   1. EARLYBARS   Early-band (0-20% progression) accuracy bars for the
+#                  three series, split at a duration threshold; run for
+#                  both 14-day and 10-day thresholds. Figure + CSV.
+#   2. TABLES      The same numbers pivoted into one report table per
+#                  threshold. CSV per threshold.
+#   3. LENCURVE    Overall and early-band accuracy versus voyage duration
+#                  (six quantile bins), all three series. Figure + CSV.
+#   4. DURDIST     Test-voyage duration distribution: summary statistics,
+#                  binned counts, histogram with split boundaries.
+#
+# ROLE IN THE REPORT: supporting. E1 carries the headline benchmark; this
+# file provides the duration-resolved evidence behind the short-versus-long
+# voyage discussion (typically one figure or table in the main text, the
+# rest appendix material).
+#
+# Prerequisites from E1 (must run first): final_runs, subregion_name_map,
+# CAPTAIN_DEDUP_STRATEGY, SERIES. The duration series _tl is rebuilt here
+# if absent.
 
 
 # [notebook cell 75]
