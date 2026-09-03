@@ -30,13 +30,16 @@ DESIGNATED_CHANNEL = 0  # index of the channel repeatedly replaced (= SE
 # [1] MULTIHEAD CHANNEL ATTENTION (MCA) — Eq. 10
 
 class MultiheadChannelAttention(keras.layers.Layer):
-    """Eq. 10. Input: x [batch, N, C, d]. Output: [batch, N, d].
+    """Multi-head channel attention that fuses the per-channel inputs.
 
-    CBAM-style channel attention (avg-pool AND max-pool branches through a
-    SHARED bottleneck MLP, summed, sigmoid), extended to h independent
-    heads, each with its own linear projection W^tr_i and its own
-    bottleneck weights (W_sq, W_ex) — heads are NOT weight-shared with each
-    other, only the avg/max branches share weights within a head.
+    Input: x [batch, N, C, d]. Output: [batch, N, d].
+
+    Each of the h heads computes channel-attention weights from an
+    average-pool branch and a max-pool branch passed through a shared
+    bottleneck MLP (squeeze and excite weights), summed and passed
+    through a sigmoid, and applies its own linear projection to the
+    attended channels. Weight sharing exists only between the avg and max
+    branches within a head; the h heads share no weights with each other.
     """
 
     def __init__(self, d_model, n_heads, gamma=2, **kwargs):
