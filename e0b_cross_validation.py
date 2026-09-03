@@ -1,12 +1,9 @@
-# =============================================================================
 # E0-B — k-fold cross-validation on the train+val pool
-# Migrated verbatim from Main_forGitHub.ipynb cells [62].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 62]
-# ----------------------------------------------------------------------
+
 # ================= CELL 4.2-CV -- k-fold cross-validation on the train+val pool
 # Same pool as the headline split (departures strictly before TEST_START, the
 # 1,125 post-TEST_END segments excluded); stratified by arrival subregion.
