@@ -1,81 +1,59 @@
-# =============================================================================
 # Section 4.1 — Train/Val/Test split
-# Migrated verbatim from Main_forGitHub.ipynb cells [41, 42].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
-# [notebook cell 41]
-# ----------------------------------------------------------------------
-# =============================================================================
 # CELL -- _make_split, SELF-CONTAINED (verbatim from the live Step4c_train.py)
 # The project's shared split logic: explicit test window [test_start, test_end]
 # carved out first (departures after test_end excluded entirely), then a
 # stratified 15% validation draw from the remaining pool. Only numpy/pandas.
-# =============================================================================
+
 import numpy as np
 import pandas as pd
 
 def _make_split(step3data, target_col, val_frac=0.15, test_frac=0.15, seed=42, stratify=True,
                  stratify_by_pair=False, test_start=None, test_end=None):
-    """Shared split logic, used identically by train_one_target(),
-    backfill_diagnostics(), and custom_progression_report() — critical that
-    all three reconstruct EXACTLY the same split given the same
-    (target_col, val_frac, test_frac, seed, stratify, stratify_by_pair),
-    the same property already relied on for backfilling diagnostics
-    without retraining.
+        """Shared split logic used identically by train_one_target(),
+    backfill_diagnostics(), and custom_progression_report(). All three must
+    reconstruct exactly the same split from the same arguments
+    (target_col, val_frac, test_frac, seed, stratify, stratify_by_pair);
+    backfilling diagnostics without retraining relies on this property.
 
-    TEST = the most recent test_frac of segments, chronologically (by
-    dep_ts) — a genuine forward-in-time holdout, directly targeting the
-    concern that a random split can't tell you whether the model
-    generalizes across a real regime change (e.g. this fleet's documented
-    Iran-conflict-era disruption) rather than just to a random subset of
-    all-time data. Never touched by TRAIN/VAL split decisions.
+    TEST: the most recent test_frac of segments, ordered chronologically by
+    departure timestamp (dep_ts). This forms a forward-in-time holdout,
+    which measures generalization across time rather than to a random
+    subset of the data, and is never affected by train/val decisions.
 
-    test_start / test_end (both optional, default None -- both or
-    neither): an EXPLICIT date window for TEST instead of "most recent
-    test_frac%". When given, TEST = every segment with dep_ts in
-    [test_start, test_end] (inclusive), and TRAIN/VAL are built ONLY
-    from segments STRICTLY BEFORE test_start — a genuine, point-in-time
-    backtest: only data that would actually have been available at the
-    time gets used for training, matching real deployment discipline
-    rather than a look-ahead-tainted split. Any segment AFTER test_end
-    is excluded from this split entirely — not train, not val, not
-    test — since including it in train/val would let the model learn
-    from data a real, live deployment at that point in time wouldn't
-    yet have had. test_frac is ignored when these are set (the window
-    itself decides how much data becomes test).
+    test_start / test_end (optional, both or neither): an explicit date
+    window for TEST instead of the most recent fraction. When given, TEST
+    contains every segment with dep_ts in [test_start, test_end] inclusive,
+    and TRAIN/VAL are built only from segments strictly before test_start.
+    This yields a point-in-time backtest: only data available at test_start
+    is used for training. Segments after test_end are excluded from the
+    split entirely (not train, not val, not test), since using them for
+    training would introduce information unavailable at that point in
+    time. test_frac is ignored when the window is set.
 
-    TRAIN/VAL = a stratified split of the REMAINING (earlier) segments —
-    full temporal + class stratification together isn't possible (which
-    classes exist at all depends on which period you're drawing from),
-    so stratification is applied only within the already-temporally-
-    separated train/val pool, where it's actually achievable and where
-    it fixes the real problem (rare classes poorly represented in val,
-    adding noise to every reported comparison). Classes with <2 examples
-    in this pool can't be split at all and are kept entirely in train
-    (flagged in the printed diagnostic).
+    TRAIN/VAL: a stratified split of the remaining (earlier) segments.
+    Full temporal and class stratification cannot be combined, because the
+    set of classes present depends on the period sampled; stratification
+    is therefore applied only within the temporally separated train/val
+    pool, where it addresses the practical problem of rare classes being
+    underrepresented in validation. Classes with fewer than 2 examples in
+    this pool cannot be split and are kept entirely in train (reported in
+    the printed diagnostic).
 
-    stratify_by_pair=False (default, unchanged behavior): groups by
-    target_col ALONE -- i.e. by ARR_SUBREGION_ID when that's the target,
-    the arrival subregion being predicted. This is NOT "by load
-    subregion" (confirmed directly, not assumed -- there was never a
-    departure-subregion grouping here at all); it's stratified by the
-    prediction TARGET class itself, standard stratified-split practice
-    (balance the thing being predicted across train/val).
+    stratify_by_pair=False (default): groups by target_col alone, i.e. by
+    the class being predicted, following standard stratified-split
+    practice of balancing the prediction target across train and val.
 
-    stratify_by_pair=True: groups by the PAIR (departure subregion,
-    target_col) instead -- a strictly finer partition (each existing
-    target_col group splits further by where the voyage started), so
-    each trade lane (e.g. "USGC -> NEAsia_China" specifically, not just
-    "-> NEAsia_China" from anywhere) gets its own proportional train/val
-    representation, not just its arrival side. Departure subregion is
-    derived via the SAME build_port_to_subregion_map(...)(DEP_PORT_ID)
-    lookup already used elsewhere in this project for the departure
-    gate/departure-subregion channel — not a new, separately-computed
-    mapping. Segments whose departure port never resolves to a subregion
-    are dropped from the val-eligible pool the same way a <2-example
-    class would be (kept in train only, flagged).
+    stratify_by_pair=True: groups by the pair (departure subregion,
+    target_col), a strictly finer partition, so that each trade lane
+    receives proportional train/val representation rather than only its
+    arrival side. The departure subregion is derived from DEP_PORT_ID via
+    the same build_port_to_subregion_map lookup used for the
+    departure-subregion channel, keeping the mapping consistent across
+    the project. Segments whose departure port does not resolve to a
+    subregion are excluded from the val-eligible pool and kept in train,
+    reported in the same diagnostic as singleton classes.
     """
     valid = step3data.traj_idx.dropna(subset=[target_col]).copy()
     if "dep_ts" not in valid.columns:
@@ -164,9 +142,6 @@ def _make_split(step3data, target_col, val_frac=0.15, test_frac=0.15, seed=42, s
 
     return train_ids, val_ids, test_ids
 
-# ----------------------------------------------------------------------
-# [notebook cell 42]
-# ----------------------------------------------------------------------
 # Split the Dataset into Train, Val and Test Set
 TEST_START = "2025-12-01"
 TEST_END   = "2026-03-01"
