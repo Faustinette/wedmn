@@ -1,16 +1,14 @@
-# =============================================================================
 # E1-B — Benchmark breakdown (early-band bars, accuracy vs duration)
 # Migrated verbatim from Main_forGitHub.ipynb cells [75, 76, 77, 78].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
+
+
 # [notebook cell 75]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E1-EARLYBARS -- early-band (0-20%) accuracy bars: model / combined / captain
 #                 split at a duration threshold; run for 14d and 10d
-# =============================================================================
+
 import numpy as np, pandas as pd, matplotlib.pyplot as plt
 from IPython.display import display, HTML
 
@@ -102,9 +100,9 @@ display(HTML("<b>Early-band accuracy by duration threshold "
 display(eb_tab)
 eb_tab.to_csv(os.path.join(WORK_DIR, "e1_earlyband_bars.csv"), index=False)
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 76]
-# ----------------------------------------------------------------------
+
 # ---- pivoted report tables: one per threshold -------------------------------
 eb_tab["cell"] = eb_tab.apply(
     lambda r: f"{r['early_acc']:.2f} \u00b1 {r['std']:.2f}", axis=1)
@@ -119,12 +117,11 @@ for thr in THRESHOLDS:
     display(piv)
     piv.to_csv(os.path.join(WORK_DIR, f"e1_earlyband_table_{thr}d.csv"))
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 77]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E1-LENCURVE -- overall & early-band accuracy vs voyage duration (3 series)
-# =============================================================================
+
 import numpy as np, pandas as pd, matplotlib.pyplot as plt
 from IPython.display import display, HTML
 
@@ -216,12 +213,11 @@ display(HTML("<b>Accuracy by voyage duration (3-seed mean)</b>"))
 display(lc_tab)
 lc_tab.to_csv(os.path.join(WORK_DIR, "e1_accuracy_vs_duration.csv"))
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 78]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E1-DURDIST -- test-voyage duration distribution: table + histogram
-# =============================================================================
+
 import numpy as np, pandas as pd, matplotlib.pyplot as plt
 from IPython.display import display, HTML
 
