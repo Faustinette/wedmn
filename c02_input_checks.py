@@ -1,14 +1,8 @@
-# =============================================================================
 # Step-3 input file inventory + shape checks (fails loudly if inputs missing)
-# Migrated verbatim from Main_forGitHub.ipynb cells [27].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
-# [notebook cell 27]
-# ----------------------------------------------------------------------
-# ==================== CELL 3a -- INPUT FILE INVENTORY ========================
-# The four Step-3 outputs the model consumes, checked explicitly so a wrong
+# INPUT FILE INVENTORY 
+# This lists and check the four outputs from raw data pre-processing (Step-3) the model consumes, checked explicitly so a wrong
 # path fails HERE with a clear message, not mid-training.
 import os
 
@@ -24,7 +18,7 @@ for key, fname in INPUT_FILES.items():
     print(f"  {key:8s} {fname:38s} {os.path.getsize(path)/1e6:8.1f} MB")
 print("All four Step-3 inputs are present in the directory.")
 
-# ==================== CELL 3b (light) -- INPUT SHAPES, NO HEAVY LOADS ========
+# INPUT SHAPES, NO HEAVY LOADS 
 import json
 import pyarrow.parquet as pq
 
