@@ -6,17 +6,38 @@ reproduces the notebook kernel: all stages execute in one shared namespace, so
 cross-cell globals (`data`, `BEST_EPOCHS`, `fold_ids`, `E3`, ...) keep working
 exactly as they did in Jupyter.
 
-## Usage
+## Requirements
+
+- **Python ≥ 3.10** (reference environment: Google Colab, **Python 3.13**,
+  where all of the report's results were produced)
+- **Keras ≥ 3** running on the **PyTorch backend** (torch ≥ 2.6; reference:
+  torch 2.11 / keras 3.13). The code sets `KERAS_BACKEND=torch` automatically
+  before importing keras — no manual configuration needed, but Keras 2.x will
+  NOT work.
+- `requirements.txt` gives a minimum-version install;
+  `requirements-colab.txt` pins the exact reference versions for
+  reproducibility.
+- A GPU is optional: with the trained checkpoints in `Results/`, evaluation
+  and analysis experiments run on CPU; retraining from scratch is GPU-advised.
+- `cartopy` is only needed for `--experiment E34` (trajectory maps); all other
+  experiments run without it.
+
+## Quickstart
 
 ```bash
+# 1. install dependencies (inside a fresh venv/conda env, Python >= 3.10)
 pip install -r requirements.txt
 
-# point WORK_DIR at the folder containing the data (defaults to cwd)
-export WORK_DIR=/path/to/data
+# 2. place the input data (see "Input files" below) in the working directory —
+#    either this folder itself, or any folder pointed to by WORK_DIR:
+export WORK_DIR=/path/to/data        # optional; defaults to current directory
+#    (Windows: set WORK_DIR=C:\path\to\data)
 
+# 3. smoke-test the dispatcher, then run experiments
+python main.py --help
+python main.py --experiment E0A     # main training — reloads checkpoints if present
 python main.py --experiment E5      # mixture vs shared feed-forward
 python main.py --experiment H8      # ship-history contribution
-python main.py --experiment E0A     # main 3-seed training (or checkpoint reload)
 ```
 
 Run `python main.py --help` for the full list. Each experiment resolves its own
