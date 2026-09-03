@@ -1,15 +1,14 @@
-# =============================================================================
+
 # E15 — error structure (G-test, taxonomy, ambiguity, empirical ceiling)
 # Migrated verbatim from Main_forGitHub.ipynb cells [202, 203, 204, 205, 206, 207, 209, 211, 213, 215].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
+
+
 # [notebook cell 202]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E15-0a -- LEVEL 0: error structure exists at all (global test + MI)
-# =============================================================================
+
 # Before naming categories: do late errors carry structure? (i) global G-test
 # of the error confusion vs the independence null; (ii) normalized mutual
 # information between true and predicted ON ERROR STEPS ONLY -- nonzero NMI
@@ -36,15 +35,14 @@ print(f"\nglobal G = {G_total:.0f} (dof {dof_total}), "
       f"p = {_st.chi2.sf(G_total, dof_total):.2e}")
 print(f"NMI(true, pred | error) = {nmi:.3f}  (0 = errors carry no structure)")
 
-# ----------------------------------------------------------------------
 # [notebook cell 203]
-# ----------------------------------------------------------------------
+
 top3 = np.argsort(-probs, axis=1)[:, :3]
 in_top3 = (top3 == true[:, None]).any(axis=1)
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 204]
-# ----------------------------------------------------------------------
+
 # E12 - Paste and run again
 # ===== E12-A2 -- label-track alignment audit (produces `bad`) =====
 last = data.steps_idx.loc[data.steps_idx.groupby("SEG_ID")["STEP_IDX"].idxmax(),
@@ -60,9 +58,9 @@ bad = d[d["end_dist_km"] > 500]
 print(f"{len(bad):,} / {len(d):,} segments end >500 km from their labeled arrival port "
       f"({100*len(bad)/len(d):.2f}%)")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 205]
-# ----------------------------------------------------------------------
+
 # ===== E12-B (STS-first) -- one category per error step =====
 
 LATE = frac > 0.95
@@ -86,12 +84,12 @@ tab["pp of late error rate"] = (100*tab["n errors"]/LATE.sum()).round(2)
 print(tab.sort_index().to_string())
 ERR_SEGS = {c: pd.Series(seg[e & (cat==c)]).value_counts() for c in sorted(set(cat[e]))}
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 206]
-# ----------------------------------------------------------------------
-# =============================================================================
+
+
 # E15-0b -- LEVEL 0: taxonomy with clustered bootstrap CIs on each share
-# =============================================================================
+
 # The E12-B cascade shares, upgraded to estimates: CI by resampling SEGMENTS.
 # Prereq: `cat` from the (STS-first-fixed) E12-B cell.
 
@@ -117,12 +115,11 @@ print("\ncascade-order sensitivity: shares are priority-ordered (STS before "
       "misaligned per the audit); reordering moves mass only between those "
       "two structurally-overlapping buckets -- state this in the caption.")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 207]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E15-0c -- LEVEL 0: exhaustiveness -- is the residual structureless?
-# =============================================================================
+
 # If the taxonomy captured all systematic error, the residual should show NO
 # concentration: E15-A's test applied to the residual bucket alone.
 res = ERR & (cat == "6 residual")
@@ -146,12 +143,11 @@ print(tr_.to_string(index=False) if len(tr_) else "  (all classes < 15 residual 
 print("\nreading: near-null p / low concentration = taxonomy exhaustive; "
       "significant rows name a candidate SEVENTH category worth inspecting.")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 209]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E15-A -- errors are STRUCTURED, not noise: concentration vs prior null
-# =============================================================================
+
 # H0: given an error, the wrong prediction lands on classes ~ their base
 # rates. Corridor confusion predicts massive concentration on ONE adjacent
 # basin per true class. G-test per class + concentration ratio.
@@ -180,12 +176,11 @@ print(t.to_string(index=False))
 print("\nreading: share_obs >> share_under_H0 (concentration >> 1, p ~ 0) "
       "= errors target ONE specific adjacent basin, not random classes.")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 211]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E15-B -- ambiguity is IN THE DATA, not the fit: cross-seed error agreement
-# =============================================================================
+
 # Three independently initialized models. If late errors were model-specific
 # (epistemic), seeds would err on DIFFERENT steps and disagree when wrong.
 # Test: pairwise error overlap + same-wrong-prediction rate vs independence.
@@ -214,12 +209,11 @@ print(f"\nwhen s42 AND s123 are both wrong: same wrong prediction "
 print("reading: errors co-locate across independent fits and agree on the "
       "wrong answer -> the ambiguity is a property of the input, not the model.")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 213]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E15-C -- the model KNOWS: true-class rank and mass on error steps
-# =============================================================================
+
 # If corridor errors were confusion, the true class would be buried; if they
 # are near-miss ambiguity, it sits at rank 2 with substantial mass.
 ranks = 1 + (probs[ERR] > probs[ERR, true[ERR]][:, None] - 1e-12).sum(1) - 1
@@ -232,12 +226,11 @@ print(f"true-class rank on late errors: median {np.median(ranks):.0f}, "
 print(f"probability mass on TRUE class when wrong: median {np.median(p_true):.2f} "
       f"(class prior scale ~ {1/15:.2f})")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 215]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E15-D -- empirical ceiling: Bayes-rate estimate from the data alone
-# =============================================================================
+
 # Model-free bound: group LATE steps by (1-deg grid cell, departure
 # subregion); the majority-vote accuracy over historical arrivals from that
 # state is the best ANY predictor of this information can do. Compare to the
