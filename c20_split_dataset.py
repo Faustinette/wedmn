@@ -1,10 +1,15 @@
 # Section 4.1 — Train/Val/Test split
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
 
-# CELL -- _make_split, SELF-CONTAINED (verbatim from the live Step4c_train.py)
-# The project's shared split logic: explicit test window [test_start, test_end]
-# carved out first (departures after test_end excluded entirely), then a
-# stratified 15% validation draw from the remaining pool. Only numpy/pandas.
+
+# Project's shared train/val/test split function.
+
+# Split order: if an explicit test window [test_start, test_end] is given,
+# those segments become TEST first, and any segment departing after test_end
+# is excluded from the split entirely. A stratified validation draw
+# (val_frac, default 15%) is then taken from the remaining earlier segments,
+# and everything left becomes TRAIN. Implemented with numpy and pandas only,
+# with no other dependencies. Full details in the docstring below.
 
 import numpy as np
 import pandas as pd
