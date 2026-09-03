@@ -1,17 +1,7 @@
-# =============================================================================
 # E0-A — Main training (3 seeds, early-stopped; skip_existing reloads) + BEST_EPOCHS bridge + val accuracy by 5% bin
-# Migrated verbatim from Main_forGitHub.ipynb cells [58, 59, 60].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
-# [notebook cell 58]
-# ----------------------------------------------------------------------
-# NEED TO FILL
-# =============================================================================
 # SECTION 4.2 -- MAIN MODEL TRAINING (paste after LIB CELL L5-MIN)
-# =============================================================================
-
 
 # ================= CELL 4.2-CONFIG-LITE ======================================
 # Only the names the notebook does NOT already define (verified against the
@@ -91,9 +81,9 @@ print(bands_df.to_string())
 
 print(f"\nBEST_EPOCHS (feeds the final train+val retrain): {BEST_EPOCHS}")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 59]
-# ----------------------------------------------------------------------
+
 # ===== E0 A -> B BRIDGE: recover BEST_EPOCHS from the saved meta JSONs =====
 import json, numpy as np
 BEST_EPOCHS, EPOCHS_RUN = {}, {}
@@ -110,9 +100,9 @@ for seed in SEEDS:
 assert all(BEST_EPOCHS.get(s) for s in SEEDS)
 print(f"\nBEST_EPOCHS recovered: {BEST_EPOCHS}")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 60]
-# ----------------------------------------------------------------------
+
 # ===== E0 A -- VALIDATION ACCURACY BY 5% PROGRESSION BIN =====
 import pandas as pd
 labels_5pct = _progression_labels(DEFAULT_PROGRESSION_BOUNDARIES)
