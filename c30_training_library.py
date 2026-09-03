@@ -1,6 +1,43 @@
 # Section 5.1 — Training library (key functions x24)
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
 
+# -----------------------------------------------------------------------------
+# CONTENTS (24 functions; leading underscore marks internal helpers)
+#
+#   Checkpoint and result I/O
+#     save_trained_weights          Save raw weight tensors (no architecture).
+#     load_trained_weights          Load saved tensors into a built model.
+#     load_trained_model            Rebuild model + load weights, for inference.
+#     _regime_weights_path          Path of a condition's final weights file.
+#     _fast_fleet_result_path       Path of a condition's cached-result JSON.
+#     _save_fast_fleet_result       Write history/val_history/metrics to cache.
+#     load_fast_fleet_result        Read a cached result back (skip retraining).
+#     _epoch_checkpoint_paths       Paths of the within-run epoch checkpoint.
+#     _save_epoch_checkpoint        Save mid-training progress for resuming.
+#     _load_epoch_checkpoint        Resume state (epochs done, histories).
+#     _clear_epoch_checkpoint       Delete the epoch checkpoint after success.
+#
+#   Gate-signal machinery
+#     parse_ais_eta                 Parse one AIS ETA string to a timestamp.
+#     build_eta_comparison          Parse all ETAs and join to segment steps.
+#     precompute_eta_progression_lookup  {(seg_id, step): ETA progression}.
+#     eta_progression_for_batch     Batch array of ETA progression values.
+#     build_port_to_subregion_map   PORT_ID -> SUBREGION_ID from arrivals.
+#     compute_alternative_progression   Alternative progression_frac signals.
+#
+#   Evaluation internals
+#     _collect_full_predictions     One forward pass, gather preds and probs.
+#     _evaluate_with_core_and_alt_progression  Eval with core + alt signals.
+#     _compute_full_metrics         sklearn metric bundle for one prediction set.
+#     _macro_auc_roc_partial        Macro one-vs-rest AUC over present classes.
+#     evaluate_full_report_metrics  Full evaluation suite over a loader.
+#     _progression_labels           "<=5%" style labels for progression bands.
+#
+#   Trainer
+#     train_residual_progression_variant   The trainer: builds, trains or
+#                                          reloads one condition end to end.
+# -----------------------------------------------------------------------------
+
 
 import os
 os.environ.setdefault("KERAS_BACKEND", "torch")  # must precede any keras import this session
