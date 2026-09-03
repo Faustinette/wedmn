@@ -2,6 +2,40 @@
 # Migrated verbatim from Main_forGitHub.ipynb cells [80, 81, 82, 83, 84].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
 
+
+# E1-C: SHORT-VERSUS-LONG VOYAGE GAP, DIAGNOSTIC INVESTIGATION
+#
+# Five analyses, in priority order, all on pooled TEST predictions, asking
+# why early-voyage accuracy differs between short and long voyages:
+#
+#   PREREQ  Pooled per-step TEST arrays across seeds + per-voyage
+#           durations; short/long split at 14 days.
+#   A1      Re-bin accuracy by ABSOLUTE elapsed days instead of
+#           progression fraction. If short and long curves coincide, the
+#           early-band gap is a fraction-binning artifact.
+#   A4      Declaration staleness: captain accuracy versus elapsed days.
+#           Tests whether departure declarations aging on long voyages
+#           explains the captain's mirror-image pattern.
+#   A2      Kitagawa/Oaxaca decomposition of the early-band gap into
+#           class-mix versus within-class performance.
+#   A3      Per-group empirical ceiling (Bayes-rate estimate given grid
+#           cell and departure basin): do the groups differ in problem
+#           hardness rather than model quality?
+#   A5      Formal wrapper: step-level logistic regression of correctness
+#           on short/long with elapsed-time and class controls,
+#           segment-clustered standard errors.
+#
+# ROLE IN THE REPORT: optional / appendix. None of these produce headline
+# numbers; they exist to justify the INTERPRETATION of the E1/E1-B
+# duration gap (artifact versus staleness versus composition versus
+# hardness). If the report states a cause for the gap, this file is the
+# evidence; otherwise it can be summarized in one or two sentences.
+#
+# Prerequisites from E1: final_runs and the loaded test-side models.
+
+
+
+
 # [notebook cell 80]
 
 # E17-PREREQ -- TEST-side pooled arrays + per-voyage durations
