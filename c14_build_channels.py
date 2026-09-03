@@ -1,59 +1,56 @@
-# =============================================================================
 # Section 3.b.vi — Construct model input channels / dataset
-# Migrated verbatim from Main_forGitHub.ipynb cells [37, 38].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
-# [notebook cell 37]
-# ----------------------------------------------------------------------
 
-# ═════════════════════════════════════════════════════════════════════════════
-# [2] QUARTILE-BASED EVALUATION (matches the paper's Table II reporting
-#     style: accuracy broken out by trajectory-progression quartile, plus
-#     overall accuracy and final-step accuracy as reference points)
-# ═════════════════════════════════════════════════════════════════════════════
+# [2] EVALUATION BY PROGRESSION BAND
+# Reports how prediction accuracy evolves over the course of a voyage:
+# accuracy is computed separately for each progression band (how far along
+# the trajectory a step is, per DEFAULT_PROGRESSION_BOUNDARIES), alongside
+# two reference numbers — overall accuracy across all steps, and accuracy
+# at the final step only. This is the reporting format used for the
+# accuracy-vs-progression tables and plots.
 
-# Default breakpoints: fine-grained in the early region (where the paper's
-# own finding says the biggest gains/challenges are), coarser afterward.
-# Each step is assigned to exactly ONE band based on its progression
-# fraction (step_index+1)/N — e.g. a step at 18% progression falls in the
-# "<=20%" band, not "<=15%". Bands are mutually exclusive, so summing
-# band_total across all bands equals the total step count (a good sanity
-# check to run if you ever modify these).
+
+# Voyage-progression bins used throughout the project: 20 uniform bands of
+# 5% covering the full 0-100% range (<=5%, <=10%, ..., <=100%).
 #
-# Uniform 5% granularity throughout the FULL 0-100% range (20 bands) — a
-# tick every 5%, not just in the early range. This is the project-wide
-# standard going forward: every function that defaults to
-# DEFAULT_PROGRESSION_BOUNDARIES (evaluate_quartile_accuracy,
-# evaluate_routed_progression_accuracy, evaluate_multi_regime_routing,
-# and every plot built from their output) now reports and plots at this
-# resolution automatically, with no extra `boundaries=` argument needed.
+# Band assignment: each step's progression fraction is (step_index+1)/N,
+# and the step falls into the FIRST band whose upper edge is >= that
+# fraction — e.g. a step at 18% progression lands in the "<=20%" band.
+# Bands are therefore mutually exclusive and exhaustive: summing band_total
+# over all bands must equal the total step count (a useful sanity check if
+# you ever modify these boundaries).
+#
+# Every evaluation function that takes a `boundaries` argument
+# (evaluate_quartile_accuracy, evaluate_routed_progression_accuracy,
+# evaluate_multi_regime_routing) defaults to this constant, and every plot
+# built from their output inherits the same resolution — so accuracy-by-
+# progression results are directly comparable across all experiments.
+
 DEFAULT_PROGRESSION_BOUNDARIES = tuple(round(i * 0.05, 2) for i in range(1, 21))
 
+# The 1° x 1° grid size is a design decision from Step 3a (the stage that
+# produced trajectories_gridded.parquet), so this constant is set directly
+# from that specification rather than estimated from the data.
+# GRID_LAT_C / GRID_LON_C store the CENTER coordinate of each cell.
+# Functions that draw grid-cell boundaries (e.g. plot_port_traffic) treat
+# this constant as the source of truth; they may additionally verify it
+# against the spacing of GRID_LAT_IDX vs GRID_LAT_C in the data, but only
+# as a sanity check — a mismatch there indicates corrupted input, not a
+# reason to change this value.
 
-# This project's own gridding methodology (Step 3a's own
-# trajectories_gridded.parquet output) uses a fixed 1° x 1° grid --
-# GRID_LAT_C/GRID_LON_C are each grid cell's own CENTER coordinate.
-# Documented directly by the person who built that stage, not derived
-# -- functions that draw grid cell boundaries (e.g. plot_port_traffic)
-# use this constant as the authoritative value, with an empirical
-# check against the data's own GRID_LAT_IDX-to-GRID_LAT_C relationship
-# as a cheap sanity check, not the primary source.
 GRID_CELL_SIZE_DEG = 1.0
 
 # Subfolder name (under work_dir) where train_residual_progression_variant,
-# train_regime_model, and related functions save/load results. Change
-# this ONE value (e.g. Step4c_train.RESULTS_SUBFOLDER = "SomeOtherName")
-# if a given work_dir uses a different results-folder name -- every
-# function that shares this convention reads from this constant, so a
-# single override applies everywhere consistently. Default is "Results",
-# matching this project's current folder convention.
+# train_regime_model, and related functions save and load their results.
+# Every function that follows this convention reads this one constant, so
+# changing it here applies everywhere consistently. Default "Results"
+# matches this project's folder layout; there is normally no reason to
+# change it.
+
 RESULTS_SUBFOLDER = "Results"
 
-# ----------------------------------------------------------------------
-# [notebook cell 38]
-# ----------------------------------------------------------------------
+
 # Construct the dataset
 assert DATA_SUBFOLDER == ""
 data = Step3Data(WORK_DIR)
@@ -63,7 +60,6 @@ print(f"Step3Data ready: {len(data.traj_idx):,} segments  "
 
 # Enrich the data labels
 enrich_arrival_labels(data)
-
 
 # Build Ship History
 data.history_index = VesselHistoryIndex(data.traj_idx)
