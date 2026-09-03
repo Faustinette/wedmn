@@ -1,4 +1,4 @@
-# WEDMN — LPG Vessel Destination Prediction
+# WEDMN — Vessel Destination Prediction
 
 Clean, git-uploadable migration of `Main_forGitHub.ipynb`. Every notebook cell
 is preserved **verbatim** (each file marks its source cells), and the runner
