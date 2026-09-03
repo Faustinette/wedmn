@@ -1,51 +1,33 @@
-# =============================================================================
 # Section 4.2 — Input channel creation
-# Migrated verbatim from Main_forGitHub.ipynb cells [44].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
-# [notebook cell 44]
-# ----------------------------------------------------------------------
-# =============================================================================
-# LIB CELL L1 -- Step3b layers half (verbatim; WORK_DIR + lazy project imports neutralized)
-# =============================================================================
+# Reimport libraries - in case rerunning from this checkpoint only
 import os
 os.environ.setdefault("KERAS_BACKEND", "torch")
-
 import json
 import warnings
 from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import keras
 from keras import ops
-
 warnings.filterwarnings("ignore")
-
 # WORK_DIR = Path.cwd()
 
-# ═════════════════════════════════════════════════════════════════════════════
 # CONFIGURATION
-# ═════════════════════════════════════════════════════════════════════════════
-D_MODEL = 32          # paper uses d=128; smaller here for fast demo/testing —
-                       # bump to 128 for real training, must be divisible by 4
+
+D_MODEL = 32           # kept small for faster trainning and efficiency
 GRU_LAYERS = 1         # depth of the Stepwise GRU stack
 EXAMPLE_SEG_ID = None  # None = reuse the same auto-picked example as Step3a's
                        # own logic (moderate length); set explicitly to match
 
-# [inlined -- demo path, unused by the classes] in_gridded   = WORK_DIR / "trajectories_gridded.parquet"
-# [inlined -- demo path, unused by the classes] in_steps_idx = WORK_DIR / "segment_steps_index.parquet"
-# [inlined -- demo path, unused by the classes] in_idx_enr   = WORK_DIR / "trajectories_index_enriched.csv"
-# [inlined -- demo path, unused by the classes] in_vocab     = WORK_DIR / "step3_vocabularies.json"
+# Demo-only input paths removed; file paths are handled by the input check
+# (core/c02_input_checks.py) and the dataset build (core/c14_build_channels.py).
 
-# ═════════════════════════════════════════════════════════════════════════════
 # [1] LAYERS
-# ═════════════════════════════════════════════════════════════════════════════
 
 class SpatialEncoding(keras.layers.Layer):
-    """WAY Eq. 7 — turns a (longitude, latitude) coordinate into a
+    """Turns (longitude, latitude) coordinate into a
     d_model-dimensional vector, the same way Transformer positional encoding
     turns an integer position into a vector, so that a downstream model can
     use spatial location as a normal continuous feature instead of a raw
@@ -71,7 +53,7 @@ class SpatialEncoding(keras.layers.Layer):
         self.phi_scale = phi_scale if phi_scale is not None else float(np.log(np.pi) ** 2)
 
     def call(self, lam_deg, phi_deg):
-        # Paper's formula operates in RADIANS, so convert from degrees first.
+        # Formula operates in RADIANS, so convert from degrees first.
         lam = lam_deg * (np.pi / 180.0)   # longitude, radians
         phi = phi_deg * (np.pi / 180.0)   # latitude, radians
 
@@ -185,19 +167,18 @@ class RepresentationLayer(keras.layers.Layer):
     """Assembles the 4-channel vector sequence x \u2208 [batch, C=4, N, d_model].
 
     CHANNEL-COMBINATION DESIGN NOTE (why TE is added into every channel
-    rather than being its own 5th channel): the paper states "[TE] is added
+    rather than being its own 5th channel): "[TE] is added
     to W^Y_x and W^S_x each while duplicating [them] for N steps, as well as
-    to the sequence outputs... defined in Section IV-A\u2013IV-A1", then "the
+    to the sequence outputs, then "the
     concatenation of such representations yields a four-channel vector
     sequence x \u2208 R^(C\u00d7N\u00d7d), where C=4." If TE were a standalone channel,
-    the paper would have C=5 (SE, local-pattern, Y, S, TE) — but it states
-    C=4 explicitly. The only reading consistent with C=4 is TE injected
+    we would have C=5 (SE, local-pattern, Y, S, TE), but we keep 
+    C=4 explicitly. C=4 is TE injected
     additively into each of the 4 substantive channels (analogous to
     standard Transformer positional-encoding injection), which is what's
     implemented here.
 
-    Auxiliary declared-destination signal (design addition, not in the
-    paper): folded into the local-pattern channel's per-point feature
+    Auxiliary declared-destination signal (design addition): folded into the local-pattern channel's per-point feature
     vector, not as a separate channel — see module docstring.
     """
 
@@ -279,7 +260,7 @@ class RepresentationLayer(keras.layers.Layer):
         self.port_embed = keras.layers.Embedding(n_ports + 1, d_model)  # +1 = NONE_DECLARED id
         self.size_embed = keras.layers.Embedding(n_size_classes, d_model)
         if use_departure_subregion_channel:
-            # Genuinely NEW main-pathway channel (Multi-Channel Attention
+            # Genuinely NEW main-pathway channel (Multi-Signal Fusion Blocks (MSF)
             # sees this alongside spatial/motion/port/size), distinct from
             # the EXISTING use_departure_gate mechanism elsewhere in this
             # project, which only ever feeds the mixture-of-experts GATE,
@@ -292,7 +273,7 @@ class RepresentationLayer(keras.layers.Layer):
             self.departure_subregion_embed = keras.layers.Embedding(n_subregions_departure, d_model)
             self._dep_port_to_subregion_lookup = ops.convert_to_tensor(dep_port_to_subregion_lookup, dtype="int32")
         if use_eta_channel:
-            # Genuinely NEW main-pathway channel, distinct from the
+            # NEW main-pathway channel, distinct from the
             # EXISTING alt_progression_modes=["eta"] mechanism elsewhere
             # in this project, which only ever feeds the mixture-of-experts
             # GATE. The actual per-step ETA-derived progression VALUES are
@@ -320,7 +301,7 @@ class RepresentationLayer(keras.layers.Layer):
             # degenerate all-zero one; only the ship-history CONTENT
             # starts at zero). At initialization this channel then
             # contributes nothing beyond position, exactly as if
-            # use_ship_history were False — MCA never has to reconcile a
+            # use_ship_history were False — MSA never has to reconcile a
             # noisy, untrained signal against the other channels from step
             # one. The model can only grow this scale if doing so actually
             # reduces the loss, giving it a real, gradient-driven way to
@@ -384,7 +365,7 @@ class RepresentationLayer(keras.layers.Layer):
                     d_model, n_subregions=candidate_fleet_n_subregions,
                     per_candidate_width=per_candidate_width, embed_dim=candidate_fleet_identity_embed_dim)
             else:
-                # [inlined -- name defined by a library cell] from Step4e_fleet_context import CandidateFleetEncoder
+                # from Step4e_fleet_context import CandidateFleetEncoder
                 # NOTE: this is NOT FleetHeadingEncoder — that one applies
                 # plain log1p, which is undefined for the negative values
                 # this channel's input routinely has (it's a signed
@@ -393,7 +374,7 @@ class RepresentationLayer(keras.layers.Layer):
                 # handle that correctly.
                 self.candidate_fleet_encoder = CandidateFleetEncoder(d_model)
         if use_fixed_horizon_fleet_context:
-            # [inlined -- name defined by a library cell] from Step4e_fleet_context import FixedHorizonFleetEncoder
+            # from Step4e_fleet_context import FixedHorizonFleetEncoder
             # n_subregions_fixed_horizon is the FLATTENED width
             # (n_horizons * n_subregions) -- matches the shape
             # prepare_fixed_horizon_fleet_batch actually produces, same
