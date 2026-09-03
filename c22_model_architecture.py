@@ -1,28 +1,17 @@
-# =============================================================================
 # Section 4.3 — Model architecture (Step4a, verbatim)
-# Migrated verbatim from Main_forGitHub.ipynb cells [46].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
-# [notebook cell 46]
-# ----------------------------------------------------------------------
+# Step4a (entire, verbatim)
 
-# =============================================================================
-# LIB CELL L2 -- Step4a (entire, verbatim)
-# =============================================================================
 """
-Step4a.py
-─────────────────────────────────────────────────────────────────────────────
 STEP 4a —
 
 Implements MSF channels and MoEFF
 
 Consumes Step 3b's representation-layer output x \u2208 [batch, C=4, N, d].
 
-─────────────────────────────────────────────────────────────────────────────
 ARCHITECTURE
-─────────────────────────────────────────────────────────────────────────────
+
 """
 
 import os
@@ -37,9 +26,8 @@ DESIGNATED_CHANNEL = 0  # index of the channel repeatedly replaced (= SE
                          # 0=SE, 1=local-pattern, 2=departure, 3=ship-type)
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+
 # [1] MULTIHEAD CHANNEL ATTENTION (MCA) — Eq. 10
-# ═════════════════════════════════════════════════════════════════════════════
 
 class MultiheadChannelAttention(keras.layers.Layer):
     """Eq. 10. Input: x [batch, N, C, d]. Output: [batch, N, d].
@@ -108,9 +96,8 @@ class MultiheadChannelAttention(keras.layers.Layer):
         return out
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+
 # [2] CFA — Eq. 11
-# ═════════════════════════════════════════════════════════════════════════════
 
 class MaskedMultiheadSelfAttention(keras.layers.Layer):
     """Eq. 11. Standard causal Transformer-decoder self-attention. Input:
@@ -168,9 +155,8 @@ class MaskedMultiheadSelfAttention(keras.layers.Layer):
         return out
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+
 # [3] SHARED FEED-FORWARD (SFF)
-# ═════════════════════════════════════════════════════════════════════════════
 
 class SharedFeedForward(keras.layers.Layer):
     """2-layer FFN with ReLU, weights shared across BOTH position (N) and
@@ -371,9 +357,9 @@ class MixtureOfExpertsFeedForward(keras.layers.Layer):
         return blended
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+
 # [4] MSF LAYER — assembles CFA -> TSA -> MoEFF
-# ═════════════════════════════════════════════════════════════════════════════
+
 
 class CASPLayer(keras.layers.Layer):
     """Input/output: x [batch, C=4, N, d]. One stacked CASP layer.
@@ -459,9 +445,10 @@ class CASPLayer(keras.layers.Layer):
         return x_out
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+
 # [5] STACK OF L MSF LAYERS + PREDICTION HEAD — Eq. 12
-# ═════════════════════════════════════════════════════════════════════════════
+
+
 
 class WAYModel(keras.layers.Layer):
     """Stacks L CASPLayers, then converts the DESIGNATED channel of the
@@ -558,38 +545,25 @@ class WAYModel(keras.layers.Layer):
         return logits
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# [6] GRADIENT DROPOUT (GD) — Eq. 13
+
+# [6] LENGTH-BALANCED LOSS WEIGHTING
 #
-#
-#   "delta_k = 1 + log max(N1,...,NB) min(N1,...,NB) Nk"
-# is missing operators/parentheses (OCR/PDF-extraction artifact, same class
-# of issue as the Spatial Encoding constant earlier). The paper states the
-# INTENT clearly even where the exact equation is ambiguous: "sampling
-# ratio... inversely proportional to the log-scaled length of the
-# instances", calibrated using both the max and min length in the
-# mini-batch. The reading implemented below is the one consistent with
-# that stated intent and dimensional sense:
+# In many-to-many training, longer trajectories contribute more summed
+# per-step cross-entropy terms purely because they have more steps,
+# regardless of how informative each step is. To compensate, every
+# instance k in a mini-batch of lengths N_1..N_B receives a loss weight
 #
 #   delta_k = 1 + log(max(N_1..N_B) / min(N_1..N_B)) / N_k
 #
-# i.e. every instance gets a small positive boost, and that boost is LARGER
-# for SHORTER instances (small N_k in the denominator) — compensating for
-# many-to-many training otherwise giving longer trajectories proportionally
-# more total loss terms (more summed per-step CE contributions) purely by
-# virtue of having more steps, unrelated to how informative each step is.
+# a small positive boost that is larger for shorter instances (smaller
+# N_k in the denominator), calibrated by the length spread of the batch
+# (the log ratio of the longest to the shortest instance).
 #
-# STOCHASTIC MECHANISM SIMPLIFIED: the paper names this "Gradient Dropout"
-# and describes delta_k as controlling loss "validity... determined
-# stochastically" — suggesting a literal per-step Bernoulli dropout of loss
-# terms calibrated by delta_k. The precise sampling procedure wasn't
-# recoverable with confidence from the extracted text. Implemented here as
-# a DETERMINISTIC per-instance loss-weight multiplier instead (simpler,
-# well-defined, captures the stated purpose of "balancing the loss update
-# against the lengths") — flagged clearly as a simplification, not a
-# literal reproduction of the stochastic mechanism. Revisit if exact
-# fidelity to the stochastic version matters for your results.
-# ═════════════════════════════════════════════════════════════════════════════
+# Implemented as a deterministic per-instance loss-weight multiplier.
+# A stochastic variant of the same idea exists, in which delta_k instead
+# calibrates a per-step random dropout of loss terms; the deterministic
+# weighting is used here as a simpler, well-defined mechanism that serves
+# the same purpose of balancing loss updates across instance lengths.
 
 def gradient_dropout_weights(lengths):
     """lengths: 1D array of N_k (real step count) for each instance in a
@@ -656,24 +630,31 @@ def restrict_mask_to_progression(step_mask, max_progression_frac=None, min_progr
 
 
 def way_loss(logits, labels, step_mask, gd_weights=None, max_progression_frac=None, min_progression_frac=None):
-    """logits: [batch,N,n_ports]; labels: [batch] (true dest port id, same
-    target at every step); step_mask: [batch,N] (1=real step, 0=padding);
-    gd_weights: optional [batch] per-instance GD multiplier (Eq. 13).
-    max_progression_frac / min_progression_frac: optional — restrict which
-    steps contribute to the loss to a progression RANGE within EACH
-    example's own trajectory (see restrict_mask_to_progression).
-    max_progression_frac=0.25 alone -> early specialist (first 25%).
-    min_progression_frac=0.25 alone -> late specialist (everything AFTER
-    25% — the exact complement, no gap or overlap with the early case).
-    Both together -> a middle band. Does NOT change what the model
-    computes or sees during the forward pass — CASP's causal
-    self-attention already means later steps never influence earlier ones
-    — only which steps' predictions are actually scored and
-    backpropagated. Both None (default): unrestricted, original behavior.
+       """Many-to-many cross-entropy loss over trajectory steps.
 
-    Implements the many-to-many CE loss (Eq. 12): the SAME label is
-    compared against the prediction at every real (non-padded) step, summed
-    per-instance, optionally reweighted by GD, then averaged over the batch.
+    The same label is compared against the prediction at every real
+    (non-padded) step, summed per instance, optionally reweighted per
+    instance, then averaged over the batch.
+
+    Args:
+      logits: [batch, N, n_ports] per-step predictions.
+      labels: [batch] true destination port id, identical target at every
+        step of an instance.
+      step_mask: [batch, N], 1 for real steps, 0 for padding.
+      gd_weights: optional [batch] per-instance loss-weight multipliers
+        (see the length-balanced loss weighting note above).
+      max_progression_frac / min_progression_frac: optional, restrict
+        which steps are scored to a progression range within each
+        example's own trajectory (see restrict_mask_to_progression).
+        max_progression_frac=0.25 alone scores only the first 25% of each
+        trajectory (early specialist); min_progression_frac=0.25 alone
+        scores everything after 25% (late specialist, the exact
+        complement, no gap or overlap); both together score a middle
+        band; both None (default) scores all steps.
+        This restriction changes only which steps are scored and
+        backpropagated, not what the model computes or sees in the
+        forward pass; causal self-attention already prevents later steps
+        from influencing earlier ones.
     """
     batch, N, n_ports = ops.shape(logits)[0], ops.shape(logits)[1], ops.shape(logits)[2]
     labels_b = ops.reshape(labels, (batch, 1))
