@@ -1,23 +1,16 @@
-# =============================================================================
 # Section 3.b.iii — Arrival labels + ship-history index (self-contained)
-# Migrated verbatim from Main_forGitHub.ipynb cells [31].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
-# [notebook cell 31]
-# ----------------------------------------------------------------------
-# CELL 3d-INLINE -- ARRIVAL LABELS + SHIP-HISTORY INDEX, SELF-CONTAINED
-# Replaces:
+# ARRIVAL LABELS + SHIP-HISTORY INDEX, SELF-CONTAINED
+# Replaces from the original notebook :
 #     from Step4c_train import enrich_arrival_labels, get_subregion_name_map
 #     enrich_arrival_labels(data); data.build_ship_history_index()
+
 # Contents, all verbatim from the live project files:
-#   1. enrich_arrival_labels      (your uploaded Step4c_train.py)
-#   2. get_subregion_name_map     (your uploaded Step4c_train.py)
-#   3. VesselHistoryIndex + its 3 constants (Step4d_ship_history.py) --
-#      so data.build_ship_history_index()'s lazy `from Step4d_...` import
-#      is bypassed: we assign data.history_index directly.
-# =============================================================================
+#   1. enrich_arrival_labels      
+#   2. get_subregion_name_map  
+#   3. VesselHistoryIndex + its 3 constants so data.build_ship_history_index()'s lazy `from Step4d
+
 import numpy as np
 import pandas as pd
 
