@@ -27,6 +27,7 @@ DESIGNATED_CHANNEL = 0  # index of the channel repeatedly replaced (= SE
 
 
 
+
 # [1] MULTIHEAD CHANNEL ATTENTION (MCA) — Eq. 10
 
 class MultiheadChannelAttention(keras.layers.Layer):
@@ -100,6 +101,8 @@ class MultiheadChannelAttention(keras.layers.Layer):
 
 
 
+
+
 # [2] CFA — Eq. 11
 
 class MaskedMultiheadSelfAttention(keras.layers.Layer):
@@ -159,6 +162,8 @@ class MaskedMultiheadSelfAttention(keras.layers.Layer):
 
 
 
+
+
 # [3] SHARED FEED-FORWARD (SFF)
 
 class SharedFeedForward(keras.layers.Layer):
@@ -176,34 +181,32 @@ class SharedFeedForward(keras.layers.Layer):
 
 
 class MixtureOfExpertsFeedForward(keras.layers.Layer):
-    """DRAFT — not yet used by default anywhere, opt-in via CASPLayer's
-    use_moe_ffn flag. Drop-in alternative to SharedFeedForward: K
-    INDEPENDENT feed-forward "experts" (own weights each, same 2-layer
-    ReLU structure as SharedFeedForward), SOFT-blended per step by a small
-    learned gate conditioned on that step's own trajectory progression
-    fraction — not hard top-1 routing (the industrial MoE default, built
-    for scaling capacity across thousands of experts, needing auxiliary
-    load-balancing losses to stop the gate collapsing onto one expert).
-    At K=2-3, purely for regime specialization rather than raw capacity,
-    soft blending sidesteps that instability entirely — closer to "a
-    slightly larger effective feed-forward, smoothly combined" than to
-    real distributed MoE.
+    """Mixture-of-experts feed-forward block, used by the final model
+    (K = 3 experts); enabled via the use_moe_ffn flag, with
+    SharedFeedForward as the single-expert alternative.
 
-    Motivation: the regime-routing experiments (train_multi_regime_models)
-    showed real gains from training SEPARATE models per progression
-    range, at the cost of each regime needing its own full backbone
-    trained from a narrower data slice. This targets the same underlying
-    idea — "behave differently depending on progression" — while keeping
-    everything BEFORE the feed-forward (channel attention, causal
-    self-attention) fully shared across the whole trajectory, only the
-    feed-forward itself specializes. Cheaper in parameter count than
-    K separate full models; the cost here is engineering risk (new
-    architecture requiring its own correctness testing), not size.
+    Mechanism: K independent feed-forward experts, each with its own
+    weights and the same 2-layer ReLU structure as SharedFeedForward. A
+    small learned gate, conditioned on each step's trajectory progression
+    fraction, blends the expert outputs SOFTLY per step. This is not
+    hard top-1 routing: hard routing is designed for scaling capacity
+    across many experts and needs auxiliary load-balancing losses to
+    keep the gate from collapsing onto one expert. At K of 2 to 3,
+    where the goal is regime specialization rather than capacity, soft
+    blending avoids that instability entirely.
 
-    Input: x [batch, C, N, d], progression_frac [batch, N] (each step's own
-    (t+1)/length — same definition used throughout this project's
-    progression bands). Output: [batch, C, N, d], same shape as
-    SharedFeedForward.
+    Motivation: training separate models per progression range
+    (train_multi_regime_models) showed real gains, but at the cost of
+    one full backbone per regime, each trained on a narrower data
+    slice. This layer targets the same idea, behaving differently by
+    progression, while everything before the feed-forward (channel
+    attention, causal self-attention) stays fully shared across the
+    trajectory; only the feed-forward specializes. Far cheaper in
+    parameters than K separate models.
+
+    Input: x [batch, C, N, d]; progression_frac [batch, N], each step's
+    (t+1)/length, the same definition used for the project's progression
+    bands. Output: [batch, C, N, d], same shape as SharedFeedForward.
     """
 
     def __init__(self, d_model, d_ff, n_experts=2, gate_uses_content=False, content_code_dim=8,
@@ -217,28 +220,29 @@ class MixtureOfExpertsFeedForward(keras.layers.Layer):
             (keras.layers.Dense(d_ff, activation="relu"), keras.layers.Dense(d_model))
             for _ in range(n_experts)
         ]
-        # Position gate: the ORIGINAL, already-proven design — progression_frac
-        # alone -> softmax over n_experts. Always present, unconditionally,
-        # regardless of gate_uses_content.
+        # Position gate: softmax over n_experts computed from
+        # progression_frac alone. Always present, regardless of
+        # gate_uses_content.
+                   
         self.gate_dense = keras.layers.Dense(16, activation="relu")
         self.gate_out = keras.layers.Dense(n_experts)
 
-        # gate_uses_content=True: a SEPARATE small MLP over content, added
-        # to the position gate's logits as a RESIDUAL, scaled by a learned
-        # scalar initialized to EXACTLY 0. At the start of training this
-        # means gate_logits = position_logits + 0*content_logits =
-        # position_logits — bit-for-bit identical to the position-only
-        # gate's own behavior on the very first forward pass, before any
-        # training happens at all. Gradient descent can only grow this
-        # scale if doing so genuinely reduces the loss; the model is never
-        # forced to reconcile two competing, differently-scaled signals
-        # from epoch 1 the way a straight concatenation does. This directly
-        # replaces an earlier version that concatenated content into the
-        # SAME gate input as progression_frac — that version measurably
-        # underperformed the position-only gate, especially in later
-        # trajectory bands, most likely because content's noisy,
-        # not-yet-useful signal competed with an already-good position
-        # signal from the very first step of training, not just early on.
+        # gate_uses_content=True adds a separate small MLP over the
+        # content, whose logits are added to the position gate's logits
+        # as a residual scaled by a learned scalar initialized to zero.
+        # At initialization, gate_logits therefore equal position_logits
+        # exactly, so the gate starts bit-identical to the position-only
+        # design, and gradient descent grows the content contribution
+        # only if doing so reduces the loss.
+        #
+        # This residual form was chosen over concatenating content into
+        # the gate input alongside progression_frac: the concatenation
+        # variant measurably underperformed the position-only gate,
+        # especially in later trajectory bands, plausibly because the
+        # initially noisy content signal competed with the already
+        # informative position signal from the first training step. The
+        # zero-initialized residual avoids that competition by
+        # construction.
         if gate_uses_content:
             self.content_proj = keras.layers.Dense(content_code_dim, activation="relu")
             self.content_norm = keras.layers.LayerNormalization()
@@ -253,20 +257,23 @@ class MixtureOfExpertsFeedForward(keras.layers.Layer):
             self.content_gate_out = None
             self.content_gate_scale = None
 
-        # n_alt_progression_signals>0: SAME residual pattern, applied to
-        # one or more ADDITIONAL progression-like signals (e.g. a
-        # historical-average duration estimate) instead of (or alongside)
-        # the "core" progression_frac. Motivation: historical-average
-        # signals were found to actively HURT accuracy in the earliest
-        # bands specifically — plausibly because they were fed in
-        # unconditionally, forcing the model to trust a signal that's
-        # least reliable exactly where voyage duration is hardest to
-        # estimate (right after departure). Each alt signal gets its OWN
-        # small gate MLP and its OWN learned scale, starting at exactly 0
-        # — the model can only lean on a given alt signal if doing so
-        # genuinely helps, and different alt signals can end up trusted
-        # to different degrees (or not at all), rather than forcing one
-        # single choice of "the" progression signal.
+        # n_alt_progression_signals > 0: the same zero-initialized
+        # residual pattern, applied to additional progression-like
+        # signals (e.g. a historical-average duration estimate) fed to
+        # the gate alongside the core progression_frac.
+        #
+        # Motivation: when a historical-average signal was fed in
+        # unconditionally, accuracy in the earliest bands measurably
+        # dropped, plausibly because the model was forced to rely on the
+        # signal exactly where it is least reliable, right after
+        # departure, when voyage duration is hardest to estimate.
+        #
+        # Each alt signal therefore gets its own small gate MLP and its
+        # own learned scale initialized to zero. The model uses a given
+        # signal only to the degree that doing so reduces the loss, so
+        # different signals can end up trusted to different degrees,
+        # including not at all, instead of one signal being designated
+        # as "the" progression input.
         self.alt_prog_gate_dense = [keras.layers.Dense(16, activation="relu") for _ in range(n_alt_progression_signals)]
         self.alt_prog_gate_out = [keras.layers.Dense(n_experts) for _ in range(n_alt_progression_signals)]
         self.alt_prog_scales = [
@@ -274,23 +281,26 @@ class MixtureOfExpertsFeedForward(keras.layers.Layer):
             for i in range(n_alt_progression_signals)
         ]
 
-        # use_departure_gate=True: a GENUINELY DIFFERENT mechanism from
-        # every residual signal above — those are each processed
-        # INDEPENDENTLY then simply ADDED, so the model can weigh each
-        # signal's overall importance but can never learn that one
-        # signal's meaning should change DEPENDING ON another (e.g. "trust
-        # early position evidence sooner, specifically for USGC
-        # departures, but not for other departure regions" — an
-        # interaction between progression AND departure region, not
-        # something either one can express alone). This gate instead
-        # embeds the departure subregion, CONCATENATES it with
-        # progression_frac (not adds — concatenation lets a single small
-        # MLP learn a genuinely joint function of both, rather than two
-        # separate linear opinions), and only THEN produces gate logits.
-        # Still wrapped in the same proven residual pattern — a learned
-        # scale starting at exactly 0 — so this joint interaction can only
-        # ever ADD capability on top of the already-working gate, never
-        # destabilize it from step one.
+        # use_departure_gate=True: a different mechanism from the
+        # residual signals above. Those are processed independently and
+        # added, so the model can weigh each signal's overall importance
+        # but cannot learn interactions where one signal's meaning
+        # depends on another (for example, trusting early position
+        # evidence sooner for departures from one region than another,
+        # which is a joint function of progression and departure region
+        # that neither signal expresses alone).
+        #
+        # This gate embeds the departure subregion and CONCATENATES it
+        # with progression_frac before a single small MLP produces the
+        # gate logits. Concatenation, unlike addition, lets the MLP learn
+        # a genuinely joint function of both inputs rather than two
+        # separate opinions.
+        #
+        # It is wrapped in the same zero-initialized learned-scale
+        # residual as the other signals, so the joint pathway can only
+        # add capability on top of the working gate and cannot
+        # destabilize it at the start of training.
+                   
         if use_departure_gate:
             if n_departure_subregions is None:
                 raise ValueError("use_departure_gate=True requires n_departure_subregions")
@@ -365,26 +375,25 @@ class MixtureOfExpertsFeedForward(keras.layers.Layer):
 
 
 class CASPLayer(keras.layers.Layer):
-    """Input/output: x [batch, C=4, N, d]. One stacked CASP layer.
+      """One stacked encoder layer. Input/output: x [batch, C=4, N, d].
 
-    Wiring (re-derived carefully from the paper's residual-connection
-    section, since it's NOT the same as a standard Transformer block):
+    The wiring is NOT a standard Transformer block; the residual
+    connections differ as follows:
 
-      designated = x[:, DESIGNATED_CHANNEL]              # [batch,N,d]
-      mca_out    = CFA(x.transpose to [batch,N,C,d])      # [batch,N,d]
-      z1         = LayerNorm(mca_out + designated)        # residual is
-                   # against the DESIGNATED channel specifically, not the
-                   # whole C-channel tensor — MCA already collapses C->1,
-                   # so there's nothing else of matching shape to add to.
-      msa_out    = CFA(z1, causal + padding mask)
-      z2         = LayerNorm(msa_out + z1)                # standard residual,
-                   # shapes match (both [batch,N,d])
-      x'         = x with x[:, DESIGNATED_CHANNEL] replaced by z2 — the
-                   # other C-1 channels pass through UNCHANGED at this stage
-      sff_out    = SMOeFF(x')                                # applied to all
-                   # C channels at every step
-      x_out      = LayerNorm(sff_out + x')                # residual over
-                   # the whole C-channel tensor now, shapes match
+      designated = x[:, DESIGNATED_CHANNEL]                  # [batch, N, d]
+      mca_out    = channel attention over x                  # [batch, N, d]
+      z1         = LayerNorm(mca_out + designated)
+                   # residual is against the DESIGNATED channel only:
+                   # channel attention collapses C to 1, so the designated
+                   # channel is the only matching-shape tensor to add.
+      msa_out    = causal self-attention over z1 (causal + padding mask)
+      z2         = LayerNorm(msa_out + z1)                   # standard residual
+      x'         = x with x[:, DESIGNATED_CHANNEL] replaced by z2;
+                   # the other C-1 channels pass through UNCHANGED here.
+      sff_out    = feed-forward over x'                      # all C channels,
+                   # every step (shared FF or mixture of experts)
+      x_out      = LayerNorm(sff_out + x')
+                   # residual over the WHOLE C-channel tensor; shapes match.
     """
 
     def __init__(self, d_model, n_heads_mca, n_heads_msa, d_ff, mca_gamma=2,
@@ -454,16 +463,15 @@ class CASPLayer(keras.layers.Layer):
 
 
 class WAYModel(keras.layers.Layer):
-    """Stacks L CASPLayers, then converts the DESIGNATED channel of the
-    LAST layer's output, at EVERY step t=1..N, into a probability
-    distribution over the Y port classes (many-to-many prediction — the
-    same true destination label is the target at every step, per the
-    paper's problem definition in Eq. 1/12).
+    """Stacks L encoder layers, then projects the DESIGNATED channel of
+    the last layer's output, at every step t = 1..N, into logits over
+    the Y port classes. Prediction is many-to-many: the same true
+    destination label is the target at every step of an instance.
 
-    Input: x [batch, C=4, N, d]  (Step 3b's representation-layer output)
-    Output: logits [batch, N, n_ports]  (apply softmax / cross-entropy
-    outside this layer, e.g. via keras.losses.SparseCategoricalCrossentropy
-    with from_logits=True, for numerical stability).
+    Input:  x [batch, C=4, N, d], the representation-layer output.
+    Output: logits [batch, N, n_ports]. Softmax and cross-entropy are
+    applied outside this layer (keras.losses.SparseCategoricalCrossentropy
+    with from_logits=True) for numerical stability.
     """
 
     def __init__(self, d_model, n_ports, n_layers, n_heads_mca, n_heads_msa, d_ff,
@@ -472,16 +480,17 @@ class WAYModel(keras.layers.Layer):
                  n_departure_subregions=None, departure_embed_dim=8, dropout_rate=0.0, **kwargs):
         super().__init__(**kwargs)
         self.n_alt_progression_signals = n_alt_progression_signals
-        # moe_last_layer_only=True: only the LAST CASP layer gets the MoE
-        # feed-forward; every earlier layer keeps the plain shared one.
-        # Tests the "late fusion" idea directly — let the shared backbone
-        # (channel attention, self-attention, AND every earlier layer's
-        # feed-forward) fully process the trajectory first, and only
-        # specialize by progression right before the output, rather than
-        # letting regime-specialization shape every layer's
-        # representations from the very first one. Cheaper too — fewer
-        # duplicated feed-forwards, same 1x-attention-cost savings as full
-        # MoE, just even less duplicated compute.
+          # moe_last_layer_only=True: only the last encoder layer uses the
+        # mixture-of-experts feed-forward; all earlier layers keep the
+        # shared one.
+        #
+        # This tests late fusion directly: the shared backbone (channel
+        # attention, self-attention, and every earlier feed-forward)
+        # processes the trajectory in full, and progression
+        # specialization is applied only immediately before the output,
+        # instead of shaping every layer's representations from the
+        # first one. It is also cheaper: fewer duplicated feed-forwards,
+        # with attention cost unchanged either way.
         if use_moe_ffn and moe_last_layer_only:
             per_layer_moe = [False] * (n_layers - 1) + [True]
         else:
@@ -501,30 +510,28 @@ class WAYModel(keras.layers.Layer):
 
     def call(self, x, key_padding_mask=None, external_progression_frac=None, alt_progression_fracs=None,
              departure_subregion_ids=None, training=False):
-        # external_progression_frac: [batch, N] optional override — if
-        # given, used AS-IS instead of the internally-computed TRUE
-        # progression fraction below. This is how every alternative
-        # progression-signal variant (historical-average duration, raw
-        # elapsed time, etc.) plugs in — compute the alternative signal
-        # OUTSIDE the model (at the training-loop level, where seg_ids and
-        # historical lookups are available) and pass it straight in here,
-        # rather than needing WAYModel itself to know about departure
-        # ports, duration indices, or any of that machinery. None
-        # (default): unchanged, original TRUE-progression behavior.
+        # external_progression_frac: optional [batch, N] override. When
+        # given, it is used as-is in place of the internally computed
+        # true progression fraction; None (default) keeps the true
+        # progression behavior. This is the plug-in point for every
+        # alternative progression-signal variant (historical-average
+        # duration, raw elapsed time, etc.): the signal is computed
+        # outside the model, at the training-loop level where seg_ids
+        # and historical lookups are available, and passed in here, so
+        # the model itself needs no knowledge of departure ports or
+        # duration indices.
         #
-        # alt_progression_fracs: optional list of [batch, N] tensors, ONE
-        # OR MORE additional progression-like signals, each residual-gated
-        # independently inside the MoE feed-forward (see
-        # MixtureOfExpertsFeedForward) — the model can learn to trust each
-        # one to a different degree, or not at all, rather than committing
-        # to a single choice of "the" progression signal in advance.
+        # alt_progression_fracs: optional list of [batch, N] tensors,
+        # one or more additional progression-like signals. Each is
+        # residual-gated independently inside the mixture feed-forward
+        # (see MixtureOfExpertsFeedForward), so the model can learn to
+        # trust each to a different degree, or not at all.
         #
-        # departure_subregion_ids: optional [batch] int tensor — required
-        # if any layer has use_departure_gate=True. Lets the gate learn a
-        # JOINT function of progression AND departure region (e.g. "trust
-        # position evidence sooner for USGC departures specifically"),
-        # rather than the independent, additive combination every other
-        # residual signal here uses.
+        # departure_subregion_ids: optional [batch] int tensor, required
+        # if any layer has use_departure_gate=True. Enables the gate to
+        # learn a joint function of progression and departure region,
+        # rather than the independent additive combination used by the
+        # other residual signals.
         progression_frac = None
         if self.use_moe_ffn:
             if external_progression_frac is not None:
