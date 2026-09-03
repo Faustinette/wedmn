@@ -5,15 +5,21 @@
 import os
 os.environ.setdefault("KERAS_BACKEND", "torch")  # must precede any keras import this session
 
-# Step4c_train, MINIMAL SUBSET (24 definitions, verbatim)
-# Only what the main-model training + evaluation path needs and the notebook
-# does not already define. Computed as the code-only transitive closure of:
-#     train_residual_progression_variant, evaluate_full_report_metrics
-# Groups: checkpoint I/O (save/load weights+model, per-epoch checkpoints,
-# fast-result cache paths) | gate-signal machinery (ETA parse/compare/lookup,
-# hist-avg via L4e's duration indices, alternative-progression compute) |
-# evaluation internals (predictions collect, full metrics incl. per-band,
-# macro-AUC) | the trainer itself. Every def is verbatim from the live file.
+
+# TRAINING LIBRARY
+#
+# Everything the main-model training and evaluation path needs. The two
+# entry points used by the experiments are:
+#     train_residual_progression_variant   (the trainer)
+#     evaluate_full_report_metrics         (the evaluation suite)
+# and the remaining definitions are their supporting machinery, in four
+# groups: checkpoint I/O (weight and model save/load, per-epoch
+# checkpoints, fast-result cache paths); gate-signal machinery (ETA
+# parsing, comparison and lookup, historical-average signals via the
+# duration indices from c25, alternative-progression computation);
+# evaluation internals (prediction collection, full metrics including
+# per-band accuracy, macro-AUC); and the trainer itself.
+
 
 import os, json, math, time, pickle
 import numpy as np
@@ -74,7 +80,7 @@ def load_trained_model(weights_path, n_ports, n_size_classes, n_classes,
                         use_moe_ffn=False, n_experts=2, gate_uses_content=False, content_code_dim=8,
                         moe_last_layer_only=False, n_alt_progression_signals=0, use_departure_gate=False,
                         n_departure_subregions=None, departure_embed_dim=8):
-       """Reconstructs the model for inference from a saved checkpoint.
+"""Reconstructs the model for inference from a saved checkpoint.
 
     Builds a fresh RepresentationLayer and model with the given architecture
     arguments, forces weight creation with a dummy forward pass, then loads
@@ -181,25 +187,27 @@ def load_trained_model(weights_path, n_ports, n_size_classes, n_classes,
 
 
 # [3b] FEATURE / CHANNEL CONTRIBUTION (diagnostic)
-
-# Two complementary views, both computed from an ALREADY-TRAINED model (no
-# retraining needed, so this is cheap regardless of how long training took):
-
-#  1. Channel-attention summary — reads out the MCA module's own learned
-#     attention weights (Section IV-B1) after a forward pass. This is
-#     exactly what the model itself decided to emphasize among the 4
-#     channels (spatial / local-pattern / departure-port / ship-type),
-#     already computed internally — free to extract, nothing extra to run.
-#  2. Permutation importance — for each individual input feature, shuffle
-#     its values across the batch (breaking that feature's association
-#     with its trajectory while leaving everything else intact) and measure
-#     the drop in final-step accuracy. Caveat: shuffling grid_lon/grid_lat/
-#     tau/local_numeric across instances of different lengths means some
-#     "real" positions of one instance get paired with what were padding
-#     values of another — a minor confound, acceptable for a first-pass
-#     importance read but not a rigorous measure. Requires N_repeat extra
-#     full validation passes per feature — cheap relative to training, but
-#     not free; scales with len(feature_list) * n_repeats * len(val_loader).
+#
+# Two complementary views, both computed from an already-trained model, so
+# no retraining is needed and the cost is independent of training time:
+#
+#  1. Channel-attention summary: reads out the channel-attention module's
+#     own learned attention weights after a forward pass. This is exactly
+#     what the model itself decided to emphasize among the input channels
+#     (spatial, local pattern, departure port, ship type, and ship
+#     history when enabled). The weights are already computed internally,
+#     so extraction is free.
+#
+#  2. Permutation importance: for each input feature, shuffle its values
+#     across the batch, breaking that feature's association with its own
+#     trajectory while leaving everything else intact, and measure the
+#     drop in final-step accuracy. Caveat: shuffling grid_lon, grid_lat,
+#     tau or local_numeric across instances of different lengths pairs
+#     some real positions of one instance with what were padding values
+#     of another. This is a minor confound, acceptable for a first-pass
+#     importance read but not a rigorous measure. Cost: n_repeats extra
+#     full validation passes per feature, cheap relative to training but
+#     scaling with len(feature_list) * n_repeats * len(val_loader).
 
 
 def _fast_fleet_result_path(work_dir, target_col, condition_name):
