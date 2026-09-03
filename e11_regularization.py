@@ -1,21 +1,19 @@
-# =============================================================================
 # E11 — training regime and regularization
-# Migrated verbatim from Main_forGitHub.ipynb cells [189, 190, 191, 192, 193, 194].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
-# [notebook cell 189]
-# ----------------------------------------------------------------------
-# =============================================================================
-# E16-CONFIG -- regularization & loss study: VAL-side, 25/patience-3
-# =============================================================================
-# Regularization choice is a SELECTION question -> evaluated on VAL like
-# E0 A (never on test). Baseline = the main model (dropout 0, wd 0),
-# reloaded. Early stopping (always on) and the length-weighted loss
-# (always on) are the implicit/structural regularisers; this section asks
-# (a) whether EXPLICIT regularisation adds anything on top, and (b) what
-# the length-weighting itself contributes (removal ablation, E16-X).
+
+# E11-CONFIG: regularization and loss study (VAL-side, 25 epochs, patience 3)
+#
+# Regularization choice is a model-selection question, so it is evaluated
+# on the validation set, like E0-A, and never on test. The baseline is the
+# main model (dropout 0, weight decay 0), reloaded rather than retrained.
+#
+# Early stopping and the length-balanced loss weighting are always on and
+# act as structural regularizers. This section therefore asks two things:
+# (a) whether EXPLICIT regularization (dropout, weight decay) adds anything
+# on top of them, and (b) what the length weighting itself contributes,
+# via a removal ablation.
+
 assert all(n in globals() for n in ("data", "train_residual_progression_variant")),     "run the data + L-cells first"
 REG_GRID = [("baseline (none)",        dict(dropout_rate=0.0, weight_decay=0.0)),
             ("dropout 0.1",            dict(dropout_rate=0.1, weight_decay=0.0)),
@@ -51,30 +49,36 @@ print(f"E16 ready: {len(REG_GRID)} grid configs + 1 loss ablation, "
       f"{len(SEEDS)} seeds ({len(REG_GRID)*len(SEEDS)-len(SEEDS)+len(SEEDS)} runs; "
       f"baseline reloads)")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 190]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E16-RUN -- the regularizer grid (baseline reloads first)
-# =============================================================================
+
 for label, rk in REG_GRID:
     print("=" * 70); print(label)
     for seed in SEEDS:
         run_reg(label, seed, **rk)
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 191]
-# ----------------------------------------------------------------------
-# =============================================================================
-# E16-X -- loss ablation: length-weighting OFF (session swap, restored)
-# =============================================================================
-# Ablates part of the LOSS DEFINITION, not an optional regulariser: the
-# trainer hardcodes gradient_dropout_weights (per-voyage length weighting)
-# in train AND val loss; this swap makes weights uniform for these runs
-# only. Their val_history values live on a DIFFERENT loss scale -- never
-# compare those numbers against weighted runs. Expected effect: strongest
-# on short-voyage / stage breakdowns, not necessarily the overall number.
+
+
+# E11-X: loss ablation, length-balanced weighting OFF (function swap, restored below)
+#
+# This ablates part of the LOSS DEFINITION, not an optional regularizer:
+# the trainer hardcodes gradient_dropout_weights (the per-voyage length
+# weighting) into both the train and the val loss. For these runs only,
+# the global function is swapped for one returning uniform weights, and
+# restored afterwards.
+#
+# WARNING: with uniform weights, val_history values live on a DIFFERENT
+# loss scale; never compare those loss numbers against weighted runs.
+# Accuracy metrics remain comparable.
+#
+# Expected effect: strongest on short-voyage and progression-band
+# breakdowns, not necessarily on the overall accuracy number.
 _orig_gd = gradient_dropout_weights
+
 def _uniform_gd(lengths):
     import numpy as _np
     return _np.ones(len(_np.asarray(lengths)), dtype="float64")
@@ -87,12 +91,12 @@ finally:
     gradient_dropout_weights = _orig_gd
 print("loss-ablation runs done; gradient_dropout_weights restored")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 192]
-# ----------------------------------------------------------------------
-# =============================================================================
+
+
 # E16-RESULTS -- one table: grid + loss ablation, stages, epochs, CSV
-# =============================================================================
+
 import numpy as np, pandas as pd, json
 from IPython.display import display, HTML
 REG_GRID_FULL = REG_GRID + [(X_LABEL, {})]
@@ -126,9 +130,9 @@ print("\ncaption note: rows 2-5 audition OPTIONAL regularisers on top of "
       "early stopping; the final row ablates the length-weighted loss "
       "itself (a component of the training objective, not an option).")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 193]
-# ----------------------------------------------------------------------
+
 # Impact of Regularization (REMOUNT)
 # exec(open("ablation_6_regularization.py").read())
 
