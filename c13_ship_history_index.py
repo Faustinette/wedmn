@@ -1,12 +1,6 @@
-# =============================================================================
 # Section 3.b.v — Ship history index (MAX_HISTORY graphs)
-# Migrated verbatim from Main_forGitHub.ipynb cells [35].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
-# [notebook cell 35]
-# ----------------------------------------------------------------------
 MAX_HISTORY = 20          # cap on nodes (past voyages) per graph
 DURATION_NORM = 500.0     # rough normalizer for duration_h (hours)
 RECENCY_NORM_DAYS = 365.0 # rough normalizer for "days since that past voyage"
