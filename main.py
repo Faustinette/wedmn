@@ -7,7 +7,7 @@ Usage:
 
 key steps - in order :
 ══════════════════════
-You never execute the files in core/ or experiments/ directly. Every
+Guidelines : never execute the files in core/ or experiments/ directly. Every
 `--experiment` resolves its prerequisites automatically (see runner.STAGES)
 and runs the required steps IN THIS FIXED ORDER, each exactly once:
 
