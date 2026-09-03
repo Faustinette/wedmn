@@ -1,16 +1,7 @@
-# =============================================================================
 # Section 4.6 — Departure duration index
-# Migrated verbatim from Main_forGitHub.ipynb cells [52].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
-# [notebook cell 52]
-# ----------------------------------------------------------------------
 
-# =============================================================================
-# LIB CELL L4e -- Duration indices (from live Step4e, verbatim)
-# =============================================================================
 class DepartureDurationIndex:
     """Fleet-wide expected-duration lookup, keyed by departure port, with a
     subregion-level fallback for ports with too little history of their
@@ -26,12 +17,15 @@ class DepartureDurationIndex:
         valid = traj_idx.dropna(subset=["DEP_PORT_ID", "duration_h"]).copy()
         valid["DEP_PORT_ID"] = valid["DEP_PORT_ID"].astype(int)
 
-        # Derive a DEP_PORT_ID -> subregion lookup from the ARRIVAL side of
-        # the data (every port that appears as an arrival already has
-        # ARR_SUBREGION_ID attached). A port that only ever appears as a
-        # departure, never an arrival, has no derivable subregion here —
-        # it falls straight through to the global fallback below, logged
-        # as such rather than silently guessed.
+        # Derive a DEP_PORT_ID -> subregion lookup from the arrival side
+        # of the data: every port that appears as an arrival already has
+        # ARR_SUBREGION_ID attached, so the mapping is read off arrivals
+        # and applied to departure ports (ports are shared between the
+        # two roles). A port that only ever appears as a departure and
+        # never as an arrival has no derivable subregion; it falls
+        # through to the global fallback below and is logged as such
+        # rather than silently assigned a guess.
+        
         port_to_subregion = (
             traj_idx.dropna(subset=["ARR_PORT_ID", "ARR_SUBREGION_ID"])
             .groupby("ARR_PORT_ID")["ARR_SUBREGION_ID"].first().astype(int).to_dict()
@@ -141,7 +135,7 @@ class FineDurationIndex:
             print(f"  {level:<10} {count:>6} ({count/total*100:.1f}%)")
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+
 # [5] CANDIDATE-CONDITIONED FUTURE FLEET STATE — Stages 1-6
 #
 # A genuinely different mechanism from everything above: instead of one
@@ -155,4 +149,3 @@ class FineDurationIndex:
 # arrivals). Port locations are DERIVED from the data itself (median
 # position of vessels' last recorded step before arrival), then any
 # arbitrary (lat, lon) is assigned to its NEAREST known port's subregion.
-# ═════════════════════════════════════════════════════════════════════════════
