@@ -1,24 +1,26 @@
-# Core scientific stack
-numpy
-pandas
-pyarrow
-scipy
-scikit-learn
-statsmodels
+# Minimum-version install (floors set below the tested reference environment;
+# see requirements-colab.txt for the exact versions used to produce the
+# report's results on Google Colab, Python 3.13).
+numpy>=2.0
+pandas>=2.2
+pyarrow>=18
+scipy>=1.14
+scikit-learn>=1.6
+statsmodels>=0.14
 
-# Deep learning — keras runs on the torch backend
-# (KERAS_BACKEND=torch is set in core/c01_imports.py BEFORE keras is imported)
-torch
-keras>=3
+# Deep learning — Keras 3 on the PyTorch backend (Keras 2.x will NOT work).
+# KERAS_BACKEND=torch is set in core/c01_imports.py before keras is imported.
+torch>=2.6
+keras>=3.8
 
 # Imported by the notebook's base-imports cell (core/c01_imports.py)
 unidecode
 rapidfuzz
 
 # Plotting / reporting
-matplotlib
-plotly
-networkx
+matplotlib>=3.9
+plotly>=5.24
+networkx>=3
 tqdm
-ipython        # IPython.display used by a few report tables
+ipython
 cartopy        # only needed for --experiment E34 (trajectory maps)
