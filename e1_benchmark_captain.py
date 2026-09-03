@@ -1,19 +1,26 @@
-# =============================================================================
 # E1 — Benchmark vs captain-declared destination (+ final main plot, combined model)
 # Migrated verbatim from Main_forGitHub.ipynb cells [67, 68, 69, 70, 71, 72, 73].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
-# [notebook cell 67]
-# ----------------------------------------------------------------------
-# =============================================================================
-# E1 LIB CELL -- captain-benchmark functions (4 defs, verbatim, live Step4c)
-# _build_captain_declared_lookup (the dedup_strategy machinery),
-# build_model_vs_captain_combined_accuracy, summarize_accuracy_by_stage,
-# plot_three_way_benchmark. Everything else they need is already defined
-# by earlier notebook cells (verified by code-only closure).
-# =============================================================================
+
+
+# E1 LIBRARY: captain-benchmark functions (4 definitions)
+#
+#   _build_captain_declared_lookup            per-step captain-declared
+#                                             destination lookup, with the
+#                                             dedup_strategy machinery for
+#                                             conflicting declarations
+#   build_model_vs_captain_combined_accuracy  aligned accuracy of model,
+#                                             captain, and combined rule
+#                                             on the same steps
+#   summarize_accuracy_by_stage               stage-band accuracy table for
+#                                             each predictor
+#   plot_three_way_benchmark                  the model / captain / combined
+#                                             comparison figure
+#
+# All other names these functions use are defined by the core library
+# cells that run before this file.
+
 import os
 os.environ.setdefault("KERAS_BACKEND", "torch")
 import numpy as np
@@ -22,69 +29,45 @@ import matplotlib.pyplot as plt
 
 def _build_captain_declared_lookup(step3data, work_dir, subregion_name_map, target_col="ARR_SUBREGION_ID",
                                     dedup_strategy="most_recent"):
-    """Shared helper: builds the (seg_id, step_idx) -> declared_subregion/
-    true_subregion/progression_frac table both
+       """Builds the (seg_id, step_idx) -> declared / true subregion /
+    progression_frac table used by both
     build_captain_declared_subregion_accuracy and
-    build_model_vs_captain_combined_accuracy need — extracted so the two
-    stay consistent by construction rather than by two independently
-    -written, potentially-diverging copies of the same filtering logic.
-    Returns the filtered DataFrame directly (same exclusion rules as
-    before: missing declaration, unmappable declared port, and unknown
-    true subregion are all excluded, not scored as wrong).
+    build_model_vs_captain_combined_accuracy. Extracted into one helper so
+    the two benchmarks share identical filtering by construction.
 
-    dedup_strategy — a single grid-step can have more than one raw AIS
-    ping (mk > 1). The model's own StepwiseGRU processes ALL of them as
-    a sequence (confirmed directly: local_declared_dest_id keeps the
-    full mk dimension all the way through its own embedding lookup,
-    concatenated with the other per-point features before the GRU —
-    the model never reduces to one pre-selected ping either); there's
-    no single "the" value it picks. For this simple ground-truth
-    metric, FOUR genuinely different, defensible choices exist, each
-    answering a different question:
+    Rows with a missing declaration, an unmappable declared port, or an
+    unknown true subregion are excluded, not scored as wrong. Returns the
+    filtered DataFrame.
 
-      "most_recent" (default): the LAST declaration by TIMESTAMP within
-      each step — the best-informed view BY THE END of that step. Still
-      carries a flavor of hindsight: it's not necessarily what was
-      actually available at any given MOMENT during the step, only what
-      was true by its close. Exactly one row per (SEG_ID, STEP_IDX).
+    dedup_strategy: one grid step can contain several raw AIS pings, and
+    the model itself never picks one (its stepwise GRU processes the full
+    ping sequence). A ground-truth benchmark must choose, and four
+    defensible strategies exist, each answering a different question:
 
-      "first": the EARLIEST declaration by TIMESTAMP within each step —
-      a genuinely no-lookahead, "what would I have known checking in
-      right as this step began" view. Exactly one row per
-      (SEG_ID, STEP_IDX).
+      "most_recent" (default): the latest declaration by timestamp within
+        the step. The best-informed view by the END of the step; mildly
+        hindsight-flavored. One row per (seg_id, step_idx).
+      "first": the earliest declaration within the step. A strictly
+        no-lookahead view of what was known as the step began. One row
+        per (seg_id, step_idx).
+      "majority_vote": the declared value with the most supporting pings
+        in the step; ties are broken toward the candidate with the latest
+        supporting ping. Closer in spirit to weighing repeated signals,
+        though not the GRU's actual learned computation. Can disagree
+        with "most_recent" (e.g. three early wrong pings and one late
+        right one). One row per (seg_id, step_idx).
+      "all_pings": no deduplication; every ping is scored as its own
+        observation. Pings in the same step share a progression_frac, so
+        they contribute several observations to the same stage band.
+        The average-accuracy view, neither favoring the step's end like
+        "most_recent" nor its start like "first".
 
-      "majority_vote": the declared value with the MOST supporting
-      pings within the step — closer in spirit to what a GRU might
-      learn to do (weigh the more heavily-repeated signal), though NOT
-      the same computation; a GRU's own gating is a learned, weighted,
-      nonlinear combination, not a literal vote. Ties (equally-common
-      candidate values) are broken by whichever candidate's own most
-      recent supporting ping is latest. NOT guaranteed to match
-      "most_recent" — a step with 3 early wrong pings and 1 late right
-      one has a majority-wrong, most-recent-right split; confirmed
-      directly with exactly this construction below. Exactly one row
-      per (SEG_ID, STEP_IDX).
-
-      "all_pings": NO deduplication at all — every raw ping scored as
-      its own independent observation. Avoids picking a single moment
-      within the step entirely; multiple pings in the same step
-      naturally share the same progression_frac (same STEP_IDX), so
-      they land in the same voyage-stage band and contribute several
-      observations to it rather than one. This is the most honest
-      answer to "how accurate does a captain's declaration tend to be,
-      on average, across whatever moments happen to have a raw ping" —
-      neither systematically flattering (like "most_recent") nor
-      systematically pessimistic (like "first" would be if declarations
-      genuinely firm up over a step).
-
-      None of the four is simply "correct" — they answer different
-      questions, and reasonable people could prefer different ones
-      depending on what's being asked. Confirmed directly this choice
-      is far from cosmetic: on one real test window, "most_recent"
-      (via an earlier, implicit, accidental version of this same
-      selection) read 84.4% where "all_pings" read 76.4% -- an 8-point
-      gap from this choice alone, not from anything else changing.
+    None of the four is simply correct; they answer different questions.
+    The choice is far from cosmetic: on one real test window,
+    "most_recent" read 84.4% where "all_pings" read 76.4%, an 8-point
+    gap from this selection alone.
     """
+                                      
     if dedup_strategy not in ("most_recent", "first", "majority_vote", "all_pings"):
         raise ValueError(f"dedup_strategy must be 'most_recent', 'first', 'majority_vote', or 'all_pings', "
                           f"got {dedup_strategy!r}")
@@ -172,58 +155,47 @@ def build_model_vs_captain_combined_accuracy(model, repr_layer, val_loader, core
                                               combined_model=None, combined_repr_layer=None, combined_core_and_alt_fn=None,
                                               combined_departure_ids_fn=None, combined_eta_channel_lookup=None,
                                               set_label="val-set", dedup_strategy="most_recent"):
-    """THREE accuracy-by-progression curves, all computed on the EXACT
-    SAME (seg_id, step_idx) steps -- the model's own validation set --
-    so they're genuinely comparable, unlike naively plotting the
-    model's val-only accuracy against build_captain_declared_subregion_
-    accuracy's whole-dataset accuracy (a different population of steps,
-    confirmed to matter: the model's own progression_acc is val-only,
-    that function's own is train+val+test combined).
+       
+          """Three accuracy-by-progression curves on the SAME evaluation steps.
 
-    1) "model": the model's own top-1 prediction, same evaluation the
-       model's own metrics use.
-    2) "captain": the captain's own declaration -- but ONLY on val-set
-       steps that also have a captain declaration (a strict subset of
-       (1)'s steps), so this differs somewhat from build_captain_
-       declared_subregion_accuracy's own number (whole dataset) by
-       design, not by omission.
-    3) "combined": what this represents depends on combined_model.
+    All three curves are computed on the exact same (seg_id, step_idx)
+    steps, the model's validation set, so they are directly comparable.
+    (Naively comparing the model's val-only accuracy against
+    build_captain_declared_subregion_accuracy's whole-dataset number
+    mixes two different step populations, which measurably changes the
+    result.)
 
-       combined_model=None (default): a simple, deployable POST-HOC RULE
-       -- use the captain's declaration where one exists, otherwise fall
-       back to the model's own prediction. NOT an oracle/ceiling (which
-       would pick whichever of the two happens to be right, unrealistic
-       since you can't know that in advance) -- what you could actually
-       run in production with no retraining at all.
+    1) "model": the model's own top-1 prediction, evaluated as in the
+       model's standard metrics.
+    2) "captain": the captain's declaration, scored only on val steps
+       that have one (a strict subset of (1)'s steps). This is why it
+       can differ from build_captain_declared_subregion_accuracy's
+       whole-dataset number: by design, not by omission.
+    3) "combined", depending on combined_model:
+       - combined_model=None (default): a deployable post-hoc rule: use
+         the captain's declaration where present, otherwise the model's
+         prediction. This is NOT an oracle ceiling (it does not pick
+         whichever happens to be right); it is what could run in
+         production without retraining.
+       - combined_model=<a trained model> (e.g. the declared-destination
+         channel variant, use_declared_destination=True): "combined"
+         becomes that model's own top-1 predictions on the same steps, a
+         LEARNED integration of the declaration rather than a hard
+         override. The distinction matters empirically: on the same
+         data, the trained-in channel scored meaningfully higher than
+         the rule, because the rule trusts the declaration whenever
+         present, even early in the voyage where it is unreliable, while
+         the trained channel can learn to discount it there.
+         combined_repr_layer is required alongside combined_model; the
+         combined_* progression/lookup arguments default to the main
+         model's own (the usual case, where the two models differ only
+         in use_declared_destination) and can be overridden otherwise.
 
-       combined_model=<a genuinely different, trained model> (e.g. the
-       "+ Declared destination channel" variant from
-       ablation_2_channel_ablation.py's Part B, use_declared_destination
-       =True): "combined" becomes THAT model's own top-1 predictions,
-       evaluated on the exact same batches/steps as "model" and
-       "captain" above -- a jointly-LEARNED integration of the
-       declaration with everything else, not a hard override rule.
-       Confirmed directly this matters, not just a theoretical
-       distinction: the post-hoc rule and the trained-in channel gave
-       substantially different accuracy on the same real data (the
-       trained-in channel meaningfully higher) -- the rule blindly
-       trusts the declaration 100% whenever present even when it's
-       known to be unreliable early-voyage, using a model that never
-       saw the declaration at all during training; the trained-in
-       channel can learn to discount it exactly when it should.
-       combined_repr_layer is required alongside combined_model.
-       combined_core_and_alt_fn/combined_departure_ids_fn/
-       combined_eta_channel_lookup default to the SAME ones as the main
-       model if not given (the common case -- the only difference
-       between the two models is normally use_declared_destination
-       itself, not the progression setup) but can be overridden if the
-       combined model genuinely differs there too.
-
-    Returns {"model": {...}, "captain": {...}, "combined": {...}}, each
-    shaped like evaluate_quartile_accuracy's own output (progression_acc/
-    progression_labels/overall_acc), directly comparable, all three on
-    the same steps.
+    Returns {"model": ..., "captain": ..., "combined": ...}, each shaped
+    like evaluate_quartile_accuracy's output (progression_acc,
+    progression_labels, overall_acc), all on the same steps.
     """
+                                                
     if combined_model is not None and combined_repr_layer is None:
         raise ValueError("combined_repr_layer is required when combined_model is given")
     if combined_model is not None:
@@ -250,40 +222,36 @@ def build_model_vs_captain_combined_accuracy(model, repr_layer, val_loader, core
                           "against a model prediction and can score every ping as its own observation.")
     captain_lookup_df = _build_captain_declared_lookup(step3data, work_dir, subregion_name_map, target_col,
                                                         dedup_strategy=dedup_strategy)
-    # (seg_id, step_idx) -> declared_subregion, for O(1) per-step lookup
-    # inside the batch loop below -- built ONCE, not re-filtered per batch.
-    # declared_subregion is ALREADY an integer subregion ID here (from
-    # build_port_to_subregion_map's own port->ID mapping, used inside
-    # _build_captain_declared_lookup) -- directly comparable against the
-    # model's own integer class predictions with NO name/ID conversion
-    # needed. Confirmed directly: an earlier version of this function
-    # incorrectly treated this as a subregion NAME and tried converting
-    # it through a name->ID map, which silently failed every single
-    # comparison (always returned None, so captain_correct was always
-    # False) -- both captain and combined accuracy came back exactly
-    # 0.0 on a test dataset deliberately built to have ~100% captain
-    # accuracy late-voyage, which is what caught it.
+    
+    # (seg_id, step_idx) -> declared_subregion lookup for O(1) access in
+    # the batch loop below; built once, not re-filtered per batch.
+    #
+    # declared_subregion is ALREADY an integer subregion ID here (mapped
+    # inside _build_captain_declared_lookup via build_port_to_subregion_map),
+    # so it compares directly against the model's integer class
+    # predictions. Do not add a name-to-ID conversion: treating this
+    # value as a subregion NAME and converting it fails silently (every
+    # lookup returns None, every comparison False), which reads as
+    # exactly 0.0 captain accuracy rather than an error.
     captain_by_step = captain_lookup_df.set_index(["SEG_ID", "STEP_IDX"])["declared_subregion"].to_dict()
 
-    # (seg_id, TENSOR POSITION) -> the REAL STEP_IDX at that position --
-    # NOT the same thing as STEP_IDX itself whenever a segment's own
-    # STEP_IDX sequence has gaps (e.g. [0,2,4,5,6,8,9,10,11,12] --
-    # ANY segment with a missing intermediate grid-step, a real
-    # possibility with raw AIS data). prepare_batch/BucketedWAYDataset
-    # place each segment's own steps into tensor position 0,1,2,... in
-    # STEP_IDX-sorted order (step3data._steps_by_seg's own construction,
-    # itself built from steps_idx already sorted by ["SEG_ID","STEP_IDX"])
-    # -- tensor position is a RANK, not the STEP_IDX value. Confirmed
-    # directly this distinction matters, not just theoretically: on a
-    # deliberately gapped test segment, treating tensor position AS
-    # STEP_IDX silently dropped roughly a fifth of real declared-steps
-    # (lookup returned None for a position whose true STEP_IDX simply
-    # didn't match its own rank) and, worse, could misattribute one
-    # step's own declaration to a DIFFERENT step at a nearby tensor
-    # position -- not just an undercount, a genuine step-level
-    # misalignment. Built once per segment actually appearing in this
-    # loader, not the whole dataset.
+    
+    # (seg_id, tensor position) -> the real STEP_IDX at that position.
+    #
+    # Tensor position is a RANK, not the STEP_IDX value: the loader packs
+    # each segment's steps into positions 0, 1, 2, ... in STEP_IDX-sorted
+    # order, and a segment's STEP_IDX sequence can have gaps (e.g.
+    # [0, 2, 4, 5, ...] when an intermediate grid step is missing, which
+    # real AIS data produces). Wherever gaps exist, position != STEP_IDX.
+    #
+    # Do not use tensor position as STEP_IDX in lookups: on gapped
+    # segments this silently drops steps (lookups return None) and can
+    # misattribute one step's declaration to a neighboring step, a
+    # step-level misalignment rather than a mere undercount.
+    #
+    # Built once, covering only segments present in this loader.
     step_idx_at_position = {}
+
     for seg_id in set(sid for batch in val_loader.batches for sid in batch):
         seg_steps = step3data._steps_by_seg.get(seg_id)
         if seg_steps is None or len(seg_steps) == 0:
@@ -460,7 +428,8 @@ def plot_three_way_benchmark(curves, work_dir, colors=None, majority_baseline=No
                               title="Model vs. captain vs. combined accuracy",
                               subtitle="Subregion-level match, by voyage progression",
                               save_name="model_captain_combined_benchmark.png"):
-    """Same shaded early/mid/late-voyage-zone visual style as
+    
+        """Same shaded early/mid/late-voyage-zone visual style as
     plot_model_vs_captain_benchmark, generalized to N lines (that
     function's gap annotation is specific to exactly 2 lines, so left
     out here rather than forced to be ambiguous for 3+).
@@ -547,13 +516,13 @@ def plot_three_way_benchmark(curves, work_dir, colors=None, majority_baseline=No
     plt.show()
     print(f"Saved -> {out_path}")
 
-# ----------------------------------------------------------------------
-# [notebook cell 68]
-# ----------------------------------------------------------------------
 
-# =============================================================================
+# [notebook cell 68]
+
+
+
 # E1 RUN CELL -- Model vs Captain vs Model+Declaration, on the TEST set
-# =============================================================================
+
 # CAPTAIN SCORING CHOICE -- how a grid-step with multiple AIS pings yields one
 # captain "prediction" (real measured spread most_recent vs all_pings: ~8 pts):
 #   "most_recent"   best-informed by the END of each step (mild hindsight)
@@ -639,12 +608,11 @@ for seed in SEEDS:
     table.to_csv(os.path.join(WORK_DIR,
         f"accuracy_by_stage_{CAPTAIN_DEDUP_STRATEGY}_seed{seed}.csv"), index=False)
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 69]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E1-COLLECT -- all three curves, all seeds, retained for averaging
-# =============================================================================
+
 # Self-sufficient: reloads Model (E0 B) and Combined (declared) checkpoints
 # per seed via skip_existing and re-runs the benchmark, storing each seed's
 # three curves. Evaluation-only after the checkpoints exist.
@@ -683,9 +651,9 @@ for seed in SEEDS:
     print(f"seed {seed}: curves stored")
 print(f"E1_RES holds {len(E1_RES)} seeds x 3 series")
 
-# =============================================================================
+
 # E1-PLOT-AVG -- 3-seed mean curves with STDEV bands (house benchmark style)
-# =============================================================================
+
 import numpy as np
 
 def plot_three_way_benchmark_meanstd(curves_mean_std, work_dir, colors=None,
@@ -781,9 +749,9 @@ plot_three_way_benchmark_meanstd(
     subtitle=f"TEST set [{TEST_START} -> {TEST_END}], captain: {CAPTAIN_DEDUP_STRATEGY}",
     save_name=f"e1_threeway_mean_std_{CAPTAIN_DEDUP_STRATEGY}.png")
 
-# =============================================================================
+
 # E1-TABLE-5PCT (fixed) -- averaged accuracy per 5% bin, all three series
-# =============================================================================
+
 import numpy as np, pandas as pd
 
 _bounds = np.array(sorted(DEFAULT_PROGRESSION_BOUNDARIES))
@@ -813,14 +781,14 @@ print(e1_5pct.to_string())
 e1_5pct.to_csv(os.path.join(WORK_DIR, f"e1_threeway_5pct_{CAPTAIN_DEDUP_STRATEGY}.csv"))
 print("\nSaved -> e1_threeway_5pct_" + CAPTAIN_DEDUP_STRATEGY + ".csv")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 70]
-# ----------------------------------------------------------------------
+
 # FINAL FIGURE Final Main Plot - Model vs Captain vs Combined, split by voyage duration (%)
 
-# =============================================================================
+
 # E1-PLOT-AVG v2 -- 3-seed mean curves + std bands, with tunable text sizes
-# =============================================================================
+
 # All text sizes live in FS below: edit one dict, everything scales.
 import os
 import numpy as np
@@ -953,26 +921,11 @@ plot_three_way_benchmark_meanstd(
     # figsize=(15, 8),                  # <- example: larger canvas
 )
 
-# ----------------------------------------------------------------------
-# [notebook cell 71]
-# ----------------------------------------------------------------------
-# TEMP TO RUN - performance of combined model
-import numpy as np
-for key in ("model", "captain", "combined"):
-    ov = [100 * np.sum(E1_RES[s][key]["band_correct"]) /
-          max(np.sum(E1_RES[s][key]["band_total"]), 1) for s in SEEDS]
-    eb = [100 * np.sum(np.array(E1_RES[s][key]["band_correct"])[_early]) /
-          max(np.sum(np.array(E1_RES[s][key]["band_total"])[_early]), 1)
-          for s in SEEDS]          # _early = boundaries <= 0.20, as in E1
-    print(f"{key:9s}: overall {np.mean(ov):5.2f} ± {np.std(ov):.2f}   "
-          f"early {np.mean(eb):5.2f} ± {np.std(eb):.2f}")
 
-# ----------------------------------------------------------------------
 # [notebook cell 72]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E1-SPLIT -- 3 GROUPS  Model vs Captain vs Combined, split by voyage duration (days)
-# =============================================================================
+
 SPLIT_MODE = "days"
 N_GROUPS   = 3              # run 1: 3 (short/medium/long) | run 2: set to 2
 
@@ -1069,12 +1022,11 @@ e1_split.to_csv(os.path.join(WORK_DIR,
     f"e1_threeway_5pct_by_{SPLIT_MODE}{N_GROUPS}_{CAPTAIN_DEDUP_STRATEGY}.csv"))
 print(f"saved plots + CSV for {SPLIT_MODE} x {N_GROUPS}")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 73]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E1-SPLIT -- 2 GROUPS  Model vs Captain vs Combined, split by voyage duration (days)
-# =============================================================================
+
 SPLIT_MODE = "days"
 N_GROUPS   = 2              # run 1: 3 (short/medium/long) | run 2: set to 2
 
