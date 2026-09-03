@@ -1,4 +1,3 @@
-
 # E15 — error structure (G-test, taxonomy, ambiguity, empirical ceiling)
 # Migrated verbatim from Main_forGitHub.ipynb cells [202, 203, 204, 205, 206, 207, 209, 211, 213, 215].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
@@ -7,12 +6,18 @@
 
 # [notebook cell 202]
 
-# E15-0a -- LEVEL 0: error structure exists at all (global test + MI)
+# E15-0a, LEVEL 0: does error structure exist at all? (global test + MI)
+#
+# Before naming any error categories, this level asks whether late-voyage
+# errors carry structure in the first place, via two tests:
+#   (i)  a global G-test of the error confusion matrix against the
+#        independence null (errors spread as if predictions were unrelated
+#        to the true class);
+#   (ii) normalized mutual information between true and predicted class,
+#        computed ON ERROR STEPS ONLY. Nonzero NMI among errors means the
+#        mistakes themselves are systematic: knowing the true class still
+#        tells you something about which wrong class was predicted.
 
-# Before naming categories: do late errors carry structure? (i) global G-test
-# of the error confusion vs the independence null; (ii) normalized mutual
-# information between true and predicted ON ERROR STEPS ONLY -- nonzero NMI
-# among errors is itself proof of systematic structure.
 import numpy as np, pandas as pd
 from scipy import stats as _st
 from sklearn.metrics import normalized_mutual_info_score
