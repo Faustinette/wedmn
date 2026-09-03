@@ -1,19 +1,18 @@
 # Section 3.b.ii — Representation layers
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
 
-# -------------------
-# [notebook cell 29]
-# -------------------
 import os
 os.environ.setdefault("KERAS_BACKEND", "torch")  # must precede any keras import this session
 # Create Data transformation class
-# ================================
+
+
 # CELL 3-INLINE -- Step3Data, FULLY SELF-CONTAINED (no project-file imports)
 # Replaces:
 #     import Step3b_representation_layer
 #     data = Step3b_representation_layer.Step3Data(WORK_DIR)
 # The class represents the Step3b_representation_layer.py's in the original notebook 
-# ===============================
+
+
 import os, json, warnings
 from pathlib import Path
 import numpy as np
