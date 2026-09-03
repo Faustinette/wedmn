@@ -1,17 +1,12 @@
-# =============================================================================
 # E0-C — Test-set evaluation (trained on train+val block) + test accuracy by 5% bin
-# Migrated verbatim from Main_forGitHub.ipynb cells [64, 65].
-# Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
+# Executed by runner.py inside the shared namespace (notebook-kernel style).
+
 # [notebook cell 64]
-# ----------------------------------------------------------------------
-# =============================================================================
+
 # E0 B -- MAIN TRAINING: train+val combined, evaluated ONCE on the TEST set
 # Paste as two cells after E0 A. Requires from E0 A's session: BEST_EPOCHS,
 # runs, and the pinned TEST_START/TEST_END (2025-12-01 -> 2026-03-01).
-# =============================================================================
 
 
 # ================= CELL E0B-1 -- FINAL RETRAIN (train+val, fixed epochs) =====
@@ -98,9 +93,9 @@ print(bands_df.to_string())
 test_df.to_csv(os.path.join(WORK_DIR, "final_main_lean2_TEST_results.csv"), index=False)
 print("\nSaved -> final_main_lean2_TEST_results.csv")
 
-# ----------------------------------------------------------------------
+
 # [notebook cell 65]
-# ----------------------------------------------------------------------
+
 # ===== E0 B -- TEST ACCURACY BY 5% PROGRESSION BIN (corrected) =====
 import numpy as np, pandas as pd
 bounds = list(DEFAULT_PROGRESSION_BOUNDARIES)
