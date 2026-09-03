@@ -1,12 +1,6 @@
-# =============================================================================
 # Section 3.b.iv — Subregion name mapping
-# Migrated verbatim from Main_forGitHub.ipynb cells [33].
 # Executed by runner.py inside the shared namespace (notebook-kernel style).
-# =============================================================================
 
-# ----------------------------------------------------------------------
-# [notebook cell 33]
-# ----------------------------------------------------------------------
 def get_subregion_name_map(step3data, subregion_col="ARR_SUBREGION_ID"):
     """Reverse of step3data.vocab's own name->id mapping (e.g.
     port_subregion_to_id), for turning subregion IDs back into readable
