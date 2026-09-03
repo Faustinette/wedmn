@@ -5,11 +5,53 @@ Usage:
     python main.py --experiment E5
     WORK_DIR=/path/to/data python main.py --experiment H8
 
+key steps - in order :
+══════════════════════
+You never execute the files in core/ or experiments/ directly. Every
+`--experiment` resolves its prerequisites automatically (see runner.STAGES)
+and runs the required steps IN THIS FIXED ORDER, each exactly once:
+
+  STEP 1 — "core" stage: data + model + training library
+     core/c01_imports.py                  base imports (sets KERAS_BACKEND=torch)
+     core/c02_input_checks.py             verifies the 4 input files exist
+     core/c10_representation_layers.py    ┐
+     core/c11_arrival_labels.py           │ build the dataset from the
+     core/c12_subregion_map.py            │ Step-3 input files
+     core/c13_ship_history_index.py       │ (notebook section 3.b)
+     core/c14_build_channels.py           ┘
+     core/c20_split_dataset.py            train/val/test split      (sec 4.1)
+     core/c21_input_channels.py           input channels            (sec 4.2)
+     core/c22_model_architecture.py       model architecture        (sec 4.3)
+     core/c23_bucketed_loader.py          batch loader              (sec 4.4)
+     core/c24_ship_history_gnn.py         ship-history GNN          (sec 4.5)
+     core/c25_departure_duration_index.py duration index            (sec 4.6)
+     core/c30_training_library.py         training functions        (sec 5.1)
+
+  STEP 2 — "train_config" stage:
+     core/c31_train_config.py             hyperparameters + sanity tripwires
+
+  STEP 3 — "trained" stage:
+     experiments/e0a_main_training.py     3-seed training. If checkpoints are
+                                          present in Results/, they are
+                                          RELOADED (skip_existing=True) —
+                                          nothing is retrained.
+
+  STEP 4 (only for experiments that need it) —
+     "e3_prereq"           experiments/e3_prereq.py           (E3/E4/E5/E6/E8/H8)
+     "pooled_predictions"  experiments/pooled_predictions.py  (STATS/E15)
+     "cv"                  experiments/e0b_cross_validation.py (E3/E6CV)
+
+  STEP 5 — experimentS files - for instance :
+     experiments/e5_mixture_vs_shared_ff.py
+
+The console prints a banner for every stage and file as it runs, so the
+sequence above is visible live. Steps 1-4 run at most once per invocation
+even if several are shared. Each run_* function below declares which STEP-4
+prerequisites its experiment needs.
+══════════════════════════════════
+
 The repo starts from Step 3b: it consumes the four preprocessed model-input
 files (see README) and never touches raw AIS data or the Step 1-3a scripts.
-Each run_* function resolves its prerequisites through runner.ensure()
-(data build → model → training library → trained checkpoints → ...), then
-executes the experiment's cells verbatim inside the shared namespace.
 Training stages use the notebook's skip_existing=True guard, so once the
 3-seed model exists under $WORK_DIR/Results/ they reload instead of retrain.
 """
